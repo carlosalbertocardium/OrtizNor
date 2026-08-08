@@ -60,3 +60,4 @@ Convención de tachado: `~~código~~` anula un dato; si hay un reemplazo al lado
 ## Estado del proyecto
 
 Motor validado contra casos reales del Dr. Ortiz. Diccionario en expansión continua — cualquier código no reconocido se reseña al final del informe del paciente correspondiente, para revisión manual, en vez de interpretarse a ciegas.
+
