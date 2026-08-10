@@ -574,6 +574,8 @@ function construirInforme(ctx){
   let mitralTxt = 'Mitral normal excursionando adecuadamente.';
   if(S.mitral.morfo) mitralTxt = `Mitral con ${morfoTextoM[S.mitral.morfo]||'esclerosis'}, excursionando adecuadamente.`;
   if(S.mitral.prolapso) mitralTxt = 'Mitral con prolapso valvular.';
+  if(S.mitral.cmp==='simple') mitralTxt += ' Calcio en el velo posterior de la válvula mitral.';
+  if(S.mitral.cmp==='restriccion') mitralTxt += ' Calcio en el velo posterior de la válvula mitral, con restricción de su excursión.';
   if(S.mitral.sm) mitralTxt += ' Limitación para su apertura' + (S.mitral.domo?' con apertura en domo del velo anterior':'') + (S.mitral.avm?`, área valvular de ${S.mitral.avm} cm² por hemipresión`:'') + '.';
   if(S.mitral.insuf) mitralTxt += ` Jet de regurgitación ${S.mitral.insuf}${S.mitral.direccion==='excentrica'?', excéntrico':''}, central hacia aurícula izquierda.`;
   desc.valv.push(mitralTxt);
@@ -646,6 +648,8 @@ function construirInforme(ctx){
     concl.push(txt + '.');
   }
   if(S.mitral.prolapso) concl.push('PROLAPSO VALVULAR MITRAL.');
+  if(S.mitral.cmp==='simple') concl.push('CALCIFICACION DEL VELO POSTERIOR MITRAL.');
+  if(S.mitral.cmp==='restriccion') concl.push('CALCIFICACION DEL VELO POSTERIOR MITRAL CON RESTRICCION DE SU MOVILIDAD.');
   if(S.mitral.sm){
     let sev = '';
     if(S.mitral.avm!==null){
@@ -712,7 +716,7 @@ function construirInforme(ctx){
   // Normal cierre
   const sinHallazgos = S.ai.estado==='normal' && S.ad.estado==='normal' && !S.vi.dilatado && !S.vi.hvi &&
     !S.espolon && S.septum.tipo===null && !S.cuerda && S.contractilidad.ok && !S.mitral.morfo && !S.mitral.insuf &&
-    !S.mitral.prolapso && !S.mitral.sm && !S.mitral.protesis && !S.aortica.morfo && !S.aortica.insuf && !S.aortica.sa && !S.aortica.anillo && !S.aortica.protesis &&
+    !S.mitral.prolapso && !S.mitral.sm && !S.mitral.protesis && !S.mitral.cmp && !S.aortica.morfo && !S.aortica.insuf && !S.aortica.sa && !S.aortica.anillo && !S.aortica.protesis &&
     !S.tricuspide.morfo && !S.pulmonar.esclerosis && !S.pulmonar.estenosis && !S.pulmonar.insuf &&
     !S.tabiques.cia && !S.tabiques.civ && !S.tabiques.fop && !S.tabiques.fopDudoso && !S.tabiques.an && !S.tabiques.sobrecarga &&
     !S.pericardio.peric && !S.pericardio.dpCm && !S.pericardio.dpCc && probHP==='BAJA' &&
@@ -861,6 +865,17 @@ function parseBloque(bloque){
     // Posicional: el primer número suelto SIN unidad (antes de iniciar la secuencia de medidas) es la FC
     if(esNumeroSimple && secuencia.length===0 && !ctx.fc){
       ctx.fc = l;
+      continue;
+    }
+
+    // Diástole y sístole del VI combinados en una sola línea, formato "50/25" (diastólico/sistólico, mm)
+    if(secuencia.length===5 && (m = l.match(/^(\d+(?:[.,]\d+)?)\s*\/\s*(\d+(?:[.,]\d+)?)$/))){
+      let vD = parseFloat(m[1].replace(',','.'));
+      let vS = parseFloat(m[2].replace(',','.'));
+      if(!m[1].includes('.') && !m[1].includes(',')) vD = vD/10;
+      if(!m[2].includes('.') && !m[2].includes(',')) vS = vS/10;
+      secuencia.push(vD.toFixed(1));
+      ctx.viSist = vS.toFixed(1);
       continue;
     }
 
