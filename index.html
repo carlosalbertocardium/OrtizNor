@@ -68,11 +68,13 @@
       <div>
         <button onclick="agregarColumna()" style="padding:7px 14px;border:1px solid var(--accent2);background:#fff;color:var(--accent2);border-radius:5px;cursor:pointer;font-size:12px;font-weight:700;">+ Agregar paciente</button>
         <button onclick="quitarColumna()" style="padding:7px 14px;border:1px solid #b5501b;background:#fff;color:#b5501b;border-radius:5px;cursor:pointer;font-size:12px;font-weight:700;">− Quitar última</button>
+        <button onclick="limpiarTodo()" style="padding:7px 14px;border:1px solid #888;background:#fff;color:#888;border-radius:5px;cursor:pointer;font-size:12px;font-weight:700;">🗑 Limpiar todo</button>
       </div>
     </div>
     <p class="hint" style="margin-bottom:10px;">
       Orden fijo dentro de cada columna (sin etiquetas): CAMA (o AMB) → NOMBRE → FC → TALLA y PESO (con unidad: 170cm / 70kg, en cualquier orden entre sí) →
       condiciones si aplica (IOT, DECUBITO...) → las 7 medidas → FEVI → resto de códigos. Use ~~código~~ para anular un dato tachado.
+      <br>💾 Lo que escribes se guarda automáticamente en este dispositivo (no requiere internet); seguirá ahí aunque cierres la app. Usa "🗑 Limpiar todo" al terminar la jornada.
     </p>
     <div id="columnasContainer" style="display:flex; gap:12px; overflow-x:auto; padding-bottom:8px;"></div>
     <button class="generate" onclick="generarColumnas()">Generar informes de todos los pacientes</button>
@@ -100,27 +102,66 @@ let contadorColumnas = 0;
 function nuevaColumnaHTML(n, placeholder){
   return `<div class="colPaciente" id="colWrap${n}">
     <div class="colHead"><span>Paciente ${n}</span><button onclick="eliminarColumna(${n})" title="Eliminar esta columna">×</button></div>
-    <textarea id="col${n}" placeholder="${placeholder}"></textarea>
+    <textarea id="col${n}" placeholder="${placeholder}" oninput="guardarEstado()"></textarea>
   </div>`;
 }
 
-function agregarColumna(placeholder){
+function agregarColumna(contenido, esValor){
   contadorColumnas++;
   const cont = document.getElementById('columnasContainer');
-  cont.insertAdjacentHTML('beforeend', nuevaColumnaHTML(contadorColumnas, placeholder || ''));
+  cont.insertAdjacentHTML('beforeend', nuevaColumnaHTML(contadorColumnas, esValor ? '' : (contenido || '')));
+  if(esValor && contenido){
+    document.getElementById('col'+contadorColumnas).value = contenido;
+  }
+  guardarEstado();
 }
 
 function eliminarColumna(n){
   const el = document.getElementById('colWrap'+n);
   if(el) el.remove();
+  guardarEstado();
 }
 
 function quitarColumna(){
   const cont = document.getElementById('columnasContainer');
   if(cont.lastElementChild) cont.lastElementChild.remove();
+  guardarEstado();
+}
+
+// ---- Autoguardado local (sin internet, sin servidor — queda en este navegador/dispositivo) ----
+const LS_KEY = 'ortiznor_columnas_v2';
+function guardarEstado(){
+  try{
+    const cont = document.getElementById('columnasContainer');
+    const valores = Array.from(cont.querySelectorAll('textarea')).map(ta => ta.value);
+    localStorage.setItem(LS_KEY, JSON.stringify(valores));
+  }catch(e){ /* almacenamiento no disponible; se ignora silenciosamente */ }
+}
+
+function limpiarTodo(){
+  if(!confirm('¿Borrar todos los pacientes escritos y empezar de cero? Esta acción no se puede deshacer.')) return;
+  localStorage.removeItem(LS_KEY);
+  document.getElementById('columnasContainer').innerHTML = '';
+  contadorColumnas = 0;
+  agregarColumna();
+  document.getElementById('salida').textContent = '';
+  document.getElementById('salida').classList.add('empty');
+  document.getElementById('unresolvedBox').innerHTML = '';
 }
 
 function inicializarColumnas(){
+  let guardado = null;
+  try{ guardado = localStorage.getItem(LS_KEY); }catch(e){}
+  if(guardado){
+    try{
+      const valores = JSON.parse(guardado);
+      if(Array.isArray(valores) && valores.length){
+        valores.forEach(v => agregarColumna(v, true));
+        return;
+      }
+    }catch(e){ /* si el guardado está corrupto, sigue con los ejemplos */ }
+  }
+
   const ejemplos = [
 `317
 Sergio Hernández
