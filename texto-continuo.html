@@ -62,6 +62,7 @@
     <div class="toggle">
       <button id="tabUnico" class="active" onclick="setModoUI('unico')">Un paciente</button>
       <button id="tabLote" onclick="setModoUI('lote')">Varios pacientes (lote)</button>
+      <button onclick="limpiarTodoV1()" style="padding:8px;border:1px solid #888;background:#fff;color:#888;border-radius:5px;cursor:pointer;font-size:12.5px;font-weight:600;">🗑 Limpiar todo</button>
     </div>
 
     <div id="modoUnico">
@@ -69,8 +70,9 @@
     <p class="hint" style="margin-bottom:8px;">
       Orden fijo: CAMA (o AMB) → NOMBRE → FC → TALLA y PESO (escritos con su unidad: 170cm / 70kg, en cualquier orden entre sí) →
       condiciones si aplica (IOT, DECUBITO...) → las 7 medidas → FEVI → resto de códigos.
+      <br>💾 Se guarda automáticamente en este dispositivo, sin internet.
     </p>
-    <textarea id="unicoInput" style="height:480px;" placeholder="317
+    <textarea id="unicoInput" oninput="guardarEstadoV1()" style="height:480px;" placeholder="317
 Sergio Hernández
 81
 170cm
@@ -96,8 +98,9 @@ S-30"></textarea>
       <p class="hint" style="margin-bottom:8px;">
         Un bloque por paciente, separado por una línea en blanco. Orden fijo (sin etiquetas): CAMA (o AMB) → NOMBRE →
         FC → TALLA y PESO (con unidad: 170cm / 70kg) → condiciones si aplica → las 7 medidas → FEVI → resto de códigos.
+        <br>💾 Se guarda automáticamente en este dispositivo, sin internet.
       </p>
-      <textarea id="loteInput" style="height:420px;" placeholder="317
+      <textarea id="loteInput" oninput="guardarEstadoV1()" style="height:420px;" placeholder="317
 Sergio Hernández
 81
 170cm
@@ -162,6 +165,33 @@ function setModoUI(tab){
   document.getElementById('tabLote').classList.toggle('active', tab==='lote');
   document.getElementById('modoUnico').style.display = tab==='unico' ? 'block' : 'none';
   document.getElementById('modoLote').style.display = tab==='lote' ? 'block' : 'none';
+}
+
+// ---- Autoguardado local (sin internet, sin servidor — queda en este navegador/dispositivo) ----
+const LS_KEY_UNICO = 'ortiznor_unico_v1';
+const LS_KEY_LOTE = 'ortiznor_lote_v1';
+function guardarEstadoV1(){
+  try{
+    localStorage.setItem(LS_KEY_UNICO, document.getElementById('unicoInput').value);
+    localStorage.setItem(LS_KEY_LOTE, document.getElementById('loteInput').value);
+  }catch(e){ /* almacenamiento no disponible; se ignora silenciosamente */ }
+}
+function restaurarEstadoV1(){
+  try{
+    const u = localStorage.getItem(LS_KEY_UNICO);
+    const l = localStorage.getItem(LS_KEY_LOTE);
+    if(u) document.getElementById('unicoInput').value = u;
+    if(l) document.getElementById('loteInput').value = l;
+  }catch(e){}
+}
+function limpiarTodoV1(){
+  if(!confirm('¿Borrar todo lo escrito (ambas pestañas) y empezar de cero? Esta acción no se puede deshacer.')) return;
+  try{ localStorage.removeItem(LS_KEY_UNICO); localStorage.removeItem(LS_KEY_LOTE); }catch(e){}
+  document.getElementById('unicoInput').value = '';
+  document.getElementById('loteInput').value = '';
+  document.getElementById('salida').textContent = '';
+  document.getElementById('salida').classList.add('empty');
+  document.getElementById('unresolvedBox').innerHTML = '';
 }
 
 function num(v){ if(v===''||v===null||v===undefined) return null; const n=parseFloat(v); return isNaN(n)?null:n; }
@@ -982,6 +1012,8 @@ function copiar(){
     btn.textContent = '¡Copiado!'; setTimeout(()=>btn.textContent=old, 1200);
   });
 }
+
+restaurarEstadoV1();
 </script>
 </body>
 </html>

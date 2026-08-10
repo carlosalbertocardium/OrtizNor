@@ -72,6 +72,7 @@
         </label>
         <button onclick="agregarColumna()" style="padding:7px 14px;border:1px solid var(--accent2);background:#fff;color:var(--accent2);border-radius:5px;cursor:pointer;font-size:12px;font-weight:700;">+ Agregar paciente</button>
         <button onclick="quitarColumna()" style="padding:7px 14px;border:1px solid #b5501b;background:#fff;color:#b5501b;border-radius:5px;cursor:pointer;font-size:12px;font-weight:700;">− Quitar última</button>
+        <button onclick="limpiarTodo()" style="padding:7px 14px;border:1px solid #888;background:#fff;color:#888;border-radius:5px;cursor:pointer;font-size:12px;font-weight:700;">🗑 Limpiar todo</button>
       </div>
     </div>
     <div id="fotoStatus" style="display:none; margin-bottom:10px; padding:8px 12px; background:#eef4fb; border:1px solid var(--accent); border-radius:5px; font-size:12.5px; color:var(--accent);"></div>
@@ -106,7 +107,7 @@ let contadorColumnas = 0;
 function nuevaColumnaHTML(n){
   return `<div class="colPaciente" id="colWrap${n}">
     <div class="colHead"><span>Paciente ${n}</span><button onclick="eliminarColumna(${n})" title="Eliminar esta columna">×</button></div>
-    <textarea id="col${n}"></textarea>
+    <textarea id="col${n}" oninput="guardarEstado()"></textarea>
   </div>`;
 }
 
@@ -119,16 +120,40 @@ function agregarColumna(contenido, esValor){
     if(esValor) ta.value = contenido;
     else ta.placeholder = contenido;
   }
+  guardarEstado();
 }
 
 function eliminarColumna(n){
   const el = document.getElementById('colWrap'+n);
   if(el) el.remove();
+  guardarEstado();
 }
 
 function quitarColumna(){
   const cont = document.getElementById('columnasContainer');
   if(cont.lastElementChild) cont.lastElementChild.remove();
+  guardarEstado();
+}
+
+// ---- Autoguardado local (sin internet, sin servidor — queda en este navegador/dispositivo) ----
+const LS_KEY = 'ortiznor_columnas_v4';
+function guardarEstado(){
+  try{
+    const cont = document.getElementById('columnasContainer');
+    const valores = Array.from(cont.querySelectorAll('textarea')).map(ta => ta.value);
+    localStorage.setItem(LS_KEY, JSON.stringify(valores));
+  }catch(e){ /* almacenamiento no disponible; se ignora silenciosamente */ }
+}
+
+function limpiarTodo(){
+  if(!confirm('¿Borrar todos los pacientes escritos y empezar de cero? Esta acción no se puede deshacer.')) return;
+  localStorage.removeItem(LS_KEY);
+  document.getElementById('columnasContainer').innerHTML = '';
+  contadorColumnas = 0;
+  agregarColumna();
+  document.getElementById('salida').textContent = '';
+  document.getElementById('salida').classList.add('empty');
+  document.getElementById('unresolvedBox').innerHTML = '';
 }
 
 // ============================================================
@@ -255,6 +280,18 @@ No agregues ningún comentario, encabezado ni explicación fuera de los bloques 
 
 
 function inicializarColumnas(){
+  let guardado = null;
+  try{ guardado = localStorage.getItem(LS_KEY); }catch(e){}
+  if(guardado){
+    try{
+      const valores = JSON.parse(guardado);
+      if(Array.isArray(valores) && valores.length){
+        valores.forEach(v => agregarColumna(v, true));
+        return;
+      }
+    }catch(e){ /* si el guardado está corrupto, sigue con los ejemplos */ }
+  }
+
   const ejemplos = [
 `317
 Sergio Hernández
