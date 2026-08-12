@@ -297,6 +297,7 @@ function interpretarLinea(raw, S){
   if(m = line.match(/^AN\s*VI\s*(\d+(?:\.\d+)?)/i)){ S.vi.aneurisma = parseFloat(m[1]); return; }
   if(/^VI\s*(↑|DIL)/i.test(line)){ S.vi.dilatado = true; return; }
   if(/^HVI/i.test(line)){ S.vi.hvi = 'HVI'; return; }
+  if(/^GRANULADO/i.test(line)){ S.vi.granulado = true; return; }
   if(/^L?HVI|LEVE HVI/i.test(line)){ S.vi.hvi = 'leve'; return; }
 
   // --- CONTRACTILIDAD ---
@@ -540,6 +541,7 @@ function construirInforme(ctx){
   S.__aiDiamCm = num(ctx.aiDiam);
   const lineas = ctx.codigos.split('\n');
   lineas.forEach(l => interpretarLinea(l, S));
+  if(S.electrodo && S.ritmo==='SINUSAL') S.ritmo = 'ESTIMULACION POR MARCAPASOS';
 
   const raiz=fmt(num(ctx.raiz));
   const apertura=fmt(num(ctx.apertura));
@@ -555,6 +557,12 @@ function construirInforme(ctx){
 
   const sc = calcularSC(num(ctx.peso), num(ctx.talla));
   const laviIndexado = (sc && S.ai.volumenTotal) ? +(S.ai.volumenTotal / sc).toFixed(1) : null;
+
+  // Detección automática de hipertrofia por medidas (septum Y pared posterior ambos >1.1 cm), si no fue codificada manualmente
+  const septumNum = num(ctx.septumVal), ppNum = num(ctx.pp);
+  if(!S.vi.hvi && septumNum!==null && ppNum!==null && septumNum>1.1 && ppNum>1.1){
+    S.vi.hvi = 'HVI';
+  }
 
   // ---- DESCRIPCIÓN ----
   let desc = {masas:[], cav:[], tab:[], peric:[], contr:[], valv:[], dop:[]};
@@ -572,6 +580,7 @@ function construirInforme(ctx){
   if(S.septum.tipo==='ambos') viLine += ' Septum interventricular con aumento de densidad acústica y adelgazado.';
   if(S.cuerda) viLine += ` Falsa cuerda tendinosa ${S.cuerda}.`;
   if(S.vi.aneurisma) viLine += ` Aneurisma apical del ventrículo izquierdo de ${S.vi.aneurisma} cm.`;
+  if(S.vi.granulado) viLine += ' Se aprecia patrón de puntuado en espesor del miocardio ventricular izquierdo que sugiere infiltración.';
   desc.cav.push(viLine);
 
   const laviTxt = (S.ai.volumenTotal && laviIndexado) ? ` y volumen de ${S.ai.volumenTotal} ml (Volumen AI ${laviIndexado} ml/m²)` : (S.ai.volumenTotal ? ` y volumen de ${S.ai.volumenTotal} ml` : '');
@@ -618,7 +627,7 @@ function construirInforme(ctx){
   desc.peric = pericLines;
 
   // Contractilidad
-  desc.contr.push(`Contractilidad global conservada con FE de ${fevi||'xxx'} %`);
+  desc.contr.push(`Contractilidad global ${feviNum!==null && feviNum<50 ? 'disminuida':'conservada'} con FE de ${fevi||'xxx'} %`);
   if(S.contractilidad.noValorable) desc.contr.push('Contractilidad segmentaria no valorable adecuadamente.');
   else desc.contr.push(S.contractilidad.ok ? 'Contractilidad segmentaria normal.' :
     'Contractilidad segmentaria: ' + S.contractilidad.alteraciones.join('; ') + '.');
@@ -632,18 +641,18 @@ function construirInforme(ctx){
   if(S.aortica.sa) aorticaTxt += ' Limitación para su apertura.';
   if(S.aortica.gPico) aorticaTxt += ` Gradiente pico de ${S.aortica.gPico} mmHg${S.aortica.gMedio?` y gradiente medio de ${S.aortica.gMedio} mmHg`:''}.`;
   if(S.aortica.ava) aorticaTxt += ` Área valvular aórtica de ${S.aortica.ava} cm² por continuidad.`;
-  if(S.aortica.insuf) aorticaTxt += ` Jet de regurgitación aórtica ${S.aortica.insuf}${S.aortica.direccion==='excentrica'?', excéntrico':''}, central hacia TSVI.`;
   desc.valv.push(aorticaTxt);
 
   const morfoTextoM = {EM:'esclerosis en sus hojuelas', 'em':'leve esclerosis en sus hojuelas', 'EM↑':'esclerosis y engrosamiento en sus hojuelas',
     CM:'esclerosis y calcificación en sus hojuelas', 'CM..':'esclerosis con puntos de calcio en sus hojuelas', CMB:'esclerosis y calcificación del borde de sus hojuelas', 'CM↑':'engrosamiento, esclerosis y calcificación en sus hojuelas', EMB:'esclerosis y engrosamiento del borde de sus hojuelas'};
-  let mitralTxt = 'Mitral normal excursionando adecuadamente.';
-  if(S.mitral.morfo) mitralTxt = `Mitral con ${morfoTextoM[S.mitral.morfo]||'esclerosis'}, excursionando adecuadamente.`;
+  let mitralTxt;
   if(S.mitral.prolapso) mitralTxt = 'Mitral con prolapso valvular.';
+  else if(S.mitral.morfo) mitralTxt = `Mitral con ${morfoTextoM[S.mitral.morfo]||'esclerosis'}, excursionando adecuadamente.`;
+  else if(S.mitral.cmp) mitralTxt = 'Mitral excursionando adecuadamente.';
+  else mitralTxt = 'Mitral normal excursionando adecuadamente.';
   if(S.mitral.cmp==='simple') mitralTxt += ' Calcio en el velo posterior de la válvula mitral.';
   if(S.mitral.cmp==='restriccion') mitralTxt += ' Calcio en el velo posterior de la válvula mitral, con restricción de su excursión.';
   if(S.mitral.sm) mitralTxt += ' Limitación para su apertura' + (S.mitral.domo?' con apertura en domo del velo anterior':'') + (S.mitral.avm?`, área valvular de ${S.mitral.avm} cm² por hemipresión`:'') + '.';
-  if(S.mitral.insuf) mitralTxt += ` Jet de regurgitación ${S.mitral.insuf}${S.mitral.direccion==='excentrica'?', excéntrico':''}, central hacia aurícula izquierda.`;
   desc.valv.push(mitralTxt);
 
   const morfoTextoT = {ET:'esclerosis en sus hojuelas', ETB:'esclerosis en sus hojuelas y bordes engrosados'};
@@ -653,7 +662,6 @@ function construirInforme(ctx){
   let pulmonarTxt = 'Pulmonar normal.';
   if(S.pulmonar.esclerosis) pulmonarTxt = 'Pulmonar con esclerosis valvular.';
   if(S.pulmonar.estenosis) pulmonarTxt = 'Pulmonar con estenosis valvular.';
-  if(S.pulmonar.insuf) pulmonarTxt += ` Jet de regurgitación pulmonar ${S.pulmonar.insuf}.`;
   tricValvTxt += '  ' + pulmonarTxt;
   desc.valv.push(tricValvTxt);
   if(S.mitral.protesis) desc.valv.push(`Prótesis valvular mitral (${S.mitral.protesis}) normofuncionante.`);
@@ -665,11 +673,11 @@ function construirInforme(ctx){
   if(S.dopplerFA) dopLines.push('Llenado ventricular irregular con ausencia de ondas A.');
   else if(S.diastole.tri) dopLines.push(`Llenado ventricular izquierdo con inversión de la relación de ondas E:A, con tiempo de relajación isovolumétrica de ${S.diastole.tri} ms.`);
   else dopLines.push('Llenado ventricular izquierdo normal.');
-  if(S.mitral.insuf) {
-    // ya mencionado en válvulas típicamente, pero informes reales lo repiten en doppler para 604 -> se deja opcional
-  }
+  if(S.mitral.insuf) dopLines.push(`Jet de regurgitación valvular mitral ${S.mitral.insuf}, ${S.mitral.direccion==='excentrica'?'excéntrico':'central'} hacia aurícula izquierda.`);
+  if(S.aortica.insuf) dopLines.push(`Jet de regurgitación valvular aórtica ${S.aortica.insuf}, ${S.aortica.direccion==='excentrica'?'excéntrico':'central'} hacia TSVI.`);
+  if(S.pulmonar.insuf) dopLines.push(`Jet de regurgitación pulmonar ${S.pulmonar.insuf}.`);
   if(S.tricuspide.sxx!==null) dopLines.push(`Jet de regurgitación tricuspídeo${S.tricuspide.insuf?' '+S.tricuspide.insuf:''} con gradiente pico al final de sístole de ${S.tricuspide.sxx} mmHg.`);
-  else dopLines.push('No se aprecia turbulencias en planos examinados.');
+  if(!S.mitral.insuf && !S.aortica.insuf && !S.pulmonar.insuf && S.tricuspide.sxx===null) dopLines.push('No se aprecia turbulencias en planos examinados.');
   desc.dop = dopLines;
 
   // ---- CONCLUSIONES ----
@@ -686,7 +694,10 @@ function construirInforme(ctx){
 
   if(!S.contractilidad.ok) concl.push('CARDIOPATIA ISQUEMICA CON ALTERACION SEGMENTARIA COMPATIBLE CON NECROSIS MIOCARDICA O INFARTO EN EVOLUCION.');
   if(S.vi.aneurisma) concl.push(`ANEURISMA APICAL DEL VENTRICULO IZQUIERDO DE ${S.vi.aneurisma} CM.`);
-  if(S.vd.apexBi || S.vd.apexDer) concl.push('DILATACION DE CAVIDADES DERECHAS.');
+  if(S.vi.hvi==='HVI') concl.push('HIPERTROFIA VENTRICULAR IZQUIERDA.');
+  if(S.vi.hvi==='leve') concl.push('LEVE HIPERTROFIA VENTRICULAR IZQUIERDA.');
+  if(S.vi.granulado) concl.push('PATRON DE PUNTUADO EN EL ESPESOR DEL MIOCARDIO VENTRICULAR IZQUIERDO QUE SUGIERE INFILTRACION.');
+  if((S.vd.apexBi || S.vd.apexDer) && S.tricuspide.sxx===null) concl.push('DILATACION DE CAVIDADES DERECHAS.');
   if(S.electrodo) concl.push('PRESENCIA DE ELECTRODO DE ESTIMULACION EN CAVIDADES DERECHAS.');
 
   // Tabiques
@@ -700,8 +711,10 @@ function construirInforme(ctx){
   }
   if(S.tabiques.an) concl.push('ANEURISMA DEL SEPTUM INTERAURICULAR' + (S.tabiques.fop||S.tabiques.fopDudoso ? ' (HALLAZGO ESTRUCTURAL ASOCIADO)' : ', SIN EVIDENCIA DE CORTOCIRCUITO') + '.');
 
-  if(S.ai.estado==='dilatada') concl.push('DILATACION AURICULAR IZQUIERDA.');
-  if(S.ai.estado==='severa') concl.push('DILATACION SEVERA DE AURICULA IZQUIERDA.');
+  // AI dilatada: se integra con IM si coexiste (se resuelve dentro del bloque mitral); si no hay IM, va sola
+  let aiConclPendiente = null;
+  if(S.ai.estado==='dilatada') aiConclPendiente = 'DILATACION AURICULAR IZQUIERDA';
+  if(S.ai.estado==='severa') aiConclPendiente = 'DILATACION SEVERA DE AURICULA IZQUIERDA';
 
   // Mitral
   if(S.mitral.morfo || S.mitral.insuf){
@@ -714,9 +727,11 @@ function construirInforme(ctx){
       const grado = S.mitral.insuf.toUpperCase();
       txt = txt ? `${txt} CON INSUFICIENCIA ${grado}` : `INSUFICIENCIA VALVULAR MITRAL ${grado}`;
       if(S.mitral.direccion==='excentrica') txt += ', EXCENTRICA';
+      if(aiConclPendiente){ txt += ` CON ${aiConclPendiente} ASOCIADA`; aiConclPendiente = null; }
     }
     concl.push(txt + '.');
   }
+  if(aiConclPendiente) concl.push(aiConclPendiente.toUpperCase()+'.');
   if(S.mitral.prolapso) concl.push('PROLAPSO VALVULAR MITRAL.');
   if(S.mitral.cmp==='simple') concl.push('CALCIFICACION DEL VELO POSTERIOR MITRAL.');
   if(S.mitral.cmp==='restriccion') concl.push('CALCIFICACION DEL VELO POSTERIOR MITRAL CON RESTRICCION DE SU MOVILIDAD.');
@@ -779,8 +794,14 @@ function construirInforme(ctx){
 
   // Pericardio
   if(S.pericardio.peric || S.pericardio.dpCm || S.pericardio.dpCc || S.pericardio.dppCm || S.pericardio.dppCc){
-    let txt = S.pericardio.peric ? 'INFLAMACION PERICARDICA' : 'DERRAME PERICARDICO';
-    if((S.pericardio.dpCm||S.pericardio.dpCc) && S.pericardio.peric) txt += ' CON DERRAME PERICARDICO';
+    const volumenPericardico = Math.max(S.pericardio.dpCc||0, S.pericardio.dppCc||0) || null;
+    let severidadDerrame = null;
+    if(volumenPericardico!==null) severidadDerrame = volumenPericardico<=150 ? 'LEVE' : (volumenPericardico<=300 ? 'MODERADO' : 'SEVERO');
+    let derrameTxt = 'DERRAME PERICARDICO';
+    if(severidadDerrame) derrameTxt += ' ' + severidadDerrame;
+    if(volumenPericardico) derrameTxt += `, CON VOLUMEN ESTIMADO DE ${volumenPericardico} CC`;
+    let txt = S.pericardio.peric ? 'INFLAMACION PERICARDICA' : derrameTxt;
+    if((S.pericardio.dpCm||S.pericardio.dpCc||S.pericardio.dppCm||S.pericardio.dppCc) && S.pericardio.peric) txt += ' CON ' + derrameTxt;
     concl.push(txt + '.');
   }
 
@@ -860,15 +881,7 @@ function construirInforme(ctx){
   return { texto: out, unresolved: S.unresolved };
 }
 
-// ---- Modo un solo paciente (lee del formulario) ----
-function generar(){
-  const ctx = parseBloque(document.getElementById('unicoInput').value);
-  const r = construirInforme(ctx);
-
-  document.getElementById('salida').textContent = r.texto;
-  document.getElementById('salida').classList.remove('empty');
-  document.getElementById('unresolvedBox').innerHTML = '';
-}
+// ---- (Generación se hace por columnas, ver generarColumnas() arriba) ----
 
 // ---- Modo lote (varios pacientes) ----
 // Formato por bloque, separado por línea en blanco:
@@ -950,6 +963,7 @@ function parseBloque(bloque){
     }
 
     // Diástole y sístole del VI combinados en una sola línea, formato "50/25" (diastólico/sistólico, mm)
+    // Va en la 6ª posición de la secuencia (después de Raíz, AI, Apertura, Septum, VD)
     if(secuencia.length===5 && (m = l.match(/^(\d+(?:[.,]\d+)?)\s*\/\s*(\d+(?:[.,]\d+)?)$/))){
       let vD = parseFloat(m[1].replace(',','.'));
       let vS = parseFloat(m[2].replace(',','.'));
@@ -985,6 +999,8 @@ function parseBloque(bloque){
   ctx.codigos = codigosRestantes.join('\n');
   return ctx;
 }
+
+// (parseLote/generarLote reemplazadas por generarColumnas() — ver arriba)
 
 function parseLote(texto){
   const bloques = texto.split(/\n\s*\n/).map(b=>b.trim()).filter(b=>b.length);
