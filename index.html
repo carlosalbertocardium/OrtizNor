@@ -296,7 +296,7 @@ function nuevoEstado(){
     cv:{valor:null, colapsaOk:true},
     diastole:{ea:null, eLat:null, eSep:null, eE:null, dt:null, tri:null, ddManual:null},
     tabiques:{cia:null, civ:null, fop:null, fopDudoso:false, an:null, sobrecarga:null},
-    masas:[], ce:null, condiciones:[],
+    masas:[], ce:null, condiciones:[], arritmiaConcl:[],
     unresolved:[]
   };
 }
@@ -327,6 +327,10 @@ function interpretarLinea(raw, S){
   if(/^CPAP\b/i.test(line)){ S.condiciones.push('paciente en CPAP'); return; }
   if(/^(SS|SEMISENT|SEMISENTADO)\b/i.test(line)){ S.condiciones.push('paciente semisentado'); return; }
   if(/^SILLA\b/i.test(line)){ S.condiciones.push('paciente sentado en silla'); return; }
+  if(/^ESV\b/i.test(line)){ S.condiciones.push('frecuente extrasistolia supraventricular'); S.arritmiaConcl.push('FRECUENTE EXTRASISTOLIA SUPRAVENTRICULAR'); return; }
+  if(/^EV\b/i.test(line)){ S.condiciones.push('frecuente extrasistolia ventricular'); S.arritmiaConcl.push('FRECUENTE EXTRASISTOLIA VENTRICULAR'); return; }
+  if(/^EXTRASIST/i.test(line)){ S.condiciones.push('frecuente extrasistolia'); S.arritmiaConcl.push('FRECUENTE EXTRASISTOLIA'); return; }
+  if(/^TERNE\b/i.test(line)){ S.condiciones.push('alineación oblicua del corte paraesternal largo'); return; }
 
   // --- RITMO ---
   if(/^FA\b/i.test(line)){ S.ritmo='FIBRILACION AURICULAR'; S.dopplerFA = true; return; }
@@ -368,6 +372,7 @@ function interpretarLinea(raw, S){
   // --- SEPTUM / ESPOLON / CUERDA ---
   if(/^ESP[OÓ]L[OÓ]N/i.test(line)){ S.espolon = true; return; }
   if(/^(SEPTUM|SEPT)\s*↑\s*↓/i.test(line)){ S.septum.tipo='ambos'; return; }
+  if(/^SEP\s*VIBR/i.test(line)){ S.septum.tipo='vibratorio'; return; }
   if(/^(SEPTUM|SEPT)\s*↑/i.test(line)){ S.septum.tipo='fibrosis'; return; }
   if(/^(SEPTUM|SEPT)\s*↓/i.test(line)){ S.septum.tipo='adelgazado'; return; }
   if(/^(SEPTUM|SEPT)\b/i.test(line)){ S.septum.tipo='hipertrofia_leve'; return; }
@@ -379,7 +384,9 @@ function interpretarLinea(raw, S){
   if(/^L?HVI|LEVE HVI/i.test(line)){ S.vi.hvi = 'leve'; return; }
 
   // --- CONTRACTILIDAD ---
-  if(/^OK$/i.test(line)){ S.contractilidad.ok = true; return; }
+  if(/^OK$/i.test(line)){ S.contractilidad.ok = true; S.contractilidad.explicitOk = true; return; }
+  if(/^H$/i.test(line)){ S.sexo = 'H'; return; }
+  if(/^M$/i.test(line)){ S.sexo = 'M'; return; }
   if(/^SEG\s*\?$/i.test(line)){ S.contractilidad.noValorable = true; return; }
   if(m = line.match(/^(AK|HK|HPK|DSK)\s+([a-zA-Z]+)\s+([a-zA-Z]+)/i)){
     const tipo = {AK:'Aquinesia',HK:'Hipoquinesia',HPK:'Hipoquinesia',DSK:'Discinesia'}[m[1].toUpperCase()];
@@ -433,7 +440,7 @@ function interpretarLinea(raw, S){
   if(/^COANDA/i.test(line)){ S.aortica.direccion='excentrica'; return; }
 
   // --- AORTICA: insuficiencia ---
-  if(m = line.match(/^IA(4|3|2|M)?\s*(exc\s*\w+|ex\s*mit)?/i)){
+  if(m = line.match(/^IA(4|3|2|M)?\s*(exc\s*\w+|ex\s*mit|septal|sep)?/i)){
     const grado = m[1]?m[1].toUpperCase():'';
     S.aortica.insuf = gradoRegurg(grado);
     if(m[2]) S.aortica.direccion = 'excentrica';
@@ -475,6 +482,8 @@ function interpretarLinea(raw, S){
 
   // --- PERICARDIO ---
   if(/^PERIC$/i.test(line)){ S.pericardio.peric = true; return; }
+  if(/^GRASA\b/i.test(line)){ S.pericardio.grasa = true; return; }
+  if(/^DER\s*\?$/i.test(line)){ S.derNoValorable = true; return; }
   if(m = line.match(/^DPP\s*(\d+(?:[.,]\d+)?)/i)){
     const v = parseFloat(m[1].replace(',','.'));
     if(v>=80) S.pericardio.dppCc = v; else S.pericardio.dppCm = v;
@@ -497,7 +506,7 @@ function interpretarLinea(raw, S){
   if(m = line.match(/^(DT|TD)\s*(\d+(?:\.\d+)?)/i)){ S.diastole.dt = parseFloat(m[2]); return; }
   if(m = line.match(/^TRI\s*(\d+(?:\.\d+)?)/i)){ S.diastole.tri = parseFloat(m[1]); return; }
   if(m = line.match(/^DD([123])/i)){ S.diastole.ddManual = parseInt(m[1]); return; }
-  if(m = line.match(/^TAPSE\s*(\d+(?:\.\d+)?)/i)){ S.tapse = parseFloat(m[1]); return; }
+  if(m = line.match(/^(TAPSE|TPS)\s*(\d+(?:\.\d+)?)/i)){ S.tapse = parseFloat(m[2]); return; }
 
   // --- MASAS Y CONTRASTE ---
   if(m = line.match(/^TX(MU|M|P|O)?\s*(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)\s*(\w+)/i)){
@@ -642,6 +651,19 @@ function construirInforme(ctx){
     S.vi.hvi = 'HVI';
   }
 
+  // Índice de masa ventricular izquierda (fórmula de Devereux), indexado por SC, con corte según sexo
+  const viDiastNum = num(ctx.viDiast);
+  let masaVI = null, masaVIIndexada = null, masaVIAnormal = null;
+  if(septumNum!==null && ppNum!==null && viDiastNum!==null){
+    masaVI = 0.8 * (1.04 * (Math.pow(septumNum+viDiastNum+ppNum,3) - Math.pow(viDiastNum,3))) + 0.6;
+    if(sc){
+      masaVIIndexada = +(masaVI / sc).toFixed(1);
+      if(S.sexo==='H') masaVIAnormal = masaVIIndexada > 115;
+      else if(S.sexo==='M') masaVIAnormal = masaVIIndexada > 95;
+      if(masaVIAnormal && !S.vi.hvi) S.vi.hvi = 'HVI';
+    }
+  }
+
   // ---- DESCRIPCIÓN ----
   let desc = {masas:[], cav:[], tab:[], peric:[], contr:[], valv:[], dop:[]};
   if(S.masas.length) desc.masas.push(...S.masas.map(m=>m+'.'));
@@ -656,6 +678,8 @@ function construirInforme(ctx){
   if(S.septum.tipo==='fibrosis') viLine += ' Septum interventricular con aumento de densidad acústica.';
   if(S.septum.tipo==='adelgazado') viLine += ' Septum interventricular adelgazado.';
   if(S.septum.tipo==='ambos') viLine += ' Septum interventricular con aumento de densidad acústica y adelgazado.';
+  if(S.septum.tipo==='vibratorio') viLine += ' Septum interventricular con movimiento vibrado.';
+  if(masaVIIndexada!==null) viLine += ` Índice de masa ventricular izquierda de ${masaVIIndexada} g/m²${S.sexo?'':' (dictar sexo H/M para clasificar normal/anormal)'}.`;
   if(S.cuerda) viLine += ` Falsa cuerda tendinosa ${S.cuerda}.`;
   if(S.vi.aneurisma) viLine += ` Aneurisma apical del ventrículo izquierdo de ${S.vi.aneurisma} cm.`;
   if(S.vi.granulado) viLine += ' Se aprecia patrón de puntuado en espesor del miocardio ventricular izquierdo que sugiere infiltración.';
@@ -670,6 +694,7 @@ function construirInforme(ctx){
   if(S.vd.apexBi) cavDerLine += ' Ventrículo derecho que se extiende hasta compartir el ápex con el ventrículo izquierdo.';
   if(S.vd.apexDer) cavDerLine += ' Ápex cardíaco ocupado por el ventrículo derecho.';
   if(S.electrodo) cavDerLine += ' Presencia de electrodo de estimulación en cavidades derechas.';
+  if(S.vd.pared!==undefined && S.vd.pared!==null) cavDerLine += ` Pared libre del ventrículo derecho de ${S.vd.pared.toFixed(1)} cm.`;
   if(S.ad.area) cavDerLine += ` Área auricular derecha de ${S.ad.area} cm².`;
   desc.cav.push(cavDerLine);
   if(S.cv.valor!==null){
@@ -691,12 +716,23 @@ function construirInforme(ctx){
 
   // Pericardio
   let pericLines = [];
-  if(S.pericardio.peric || S.pericardio.dpCm || S.pericardio.dpCc || S.pericardio.dppCm || S.pericardio.dppCc){
+  if(S.pericardio.peric || S.pericardio.dpCm || S.pericardio.dpCc || S.pericardio.dppCm || S.pericardio.dppCc || S.pericardio.grasa){
     let parts = [];
     if(S.pericardio.dpCm) parts.push(`separación de hojas pericárdicas de ${S.pericardio.dpCm} cm`);
     if(S.pericardio.dpCc) parts.push(`volumen estimado de ${S.pericardio.dpCc} cc`);
-    let txt = 'Halo de ausencia de ecos' + (parts.length? ' con '+parts.join(' y '):'');
-    if(S.pericardio.peric) txt += ', asociado a engrosamiento y realce de hojas pericárdicas';
+    let txt;
+    if(S.pericardio.dpCm || S.pericardio.dpCc || S.pericardio.dppCm || S.pericardio.dppCc){
+      txt = 'Halo de ausencia de ecos' + (parts.length? ' con '+parts.join(' y '):'');
+      let extras = [];
+      if(S.pericardio.peric) extras.push('engrosamiento y realce de hojas pericárdicas');
+      if(S.pericardio.grasa) extras.push('hipoecodensidad sugestiva de grasa pericárdica');
+      if(extras.length) txt += ', asociado a ' + extras.join(' y ');
+    } else if(S.pericardio.grasa){
+      txt = 'Hipoecodensidad sugestiva de grasa pericárdica';
+      if(S.pericardio.peric) txt += ', asociado a engrosamiento y realce de hojas pericárdicas';
+    } else {
+      txt = 'Halo de ausencia de ecos asociado a engrosamiento y realce de hojas pericárdicas';
+    }
     txt += '.';
     pericLines.push(txt);
   } else {
@@ -706,7 +742,9 @@ function construirInforme(ctx){
 
   // Contractilidad
   desc.contr.push(`Contractilidad global ${feviNum!==null && feviNum<50 ? 'disminuida':'conservada'} con FE de ${fevi||'xxx'} %`);
+  const feBorderline = feviNum!==null && feviNum>=50 && feviNum<=53 && S.contractilidad.alteraciones.length===0 && !S.contractilidad.explicitOk;
   if(S.contractilidad.noValorable) desc.contr.push('Contractilidad segmentaria no valorable adecuadamente.');
+  else if(feBorderline) desc.contr.push('Contractilidad segmentaria con leve hipoquinesia generalizada.');
   else desc.contr.push(S.contractilidad.ok ? 'Contractilidad segmentaria normal.' :
     'Contractilidad segmentaria: ' + S.contractilidad.alteraciones.join('; ') + '.');
 
@@ -755,12 +793,14 @@ function construirInforme(ctx){
   if(S.aortica.insuf) dopLines.push(`Jet de regurgitación valvular aórtica ${S.aortica.insuf}, ${S.aortica.direccion==='excentrica'?'excéntrico':'central'} hacia TSVI.`);
   if(S.pulmonar.insuf) dopLines.push(`Jet de regurgitación pulmonar ${S.pulmonar.insuf}.`);
   if(S.tricuspide.sxx!==null) dopLines.push(`Jet de regurgitación tricuspídeo${S.tricuspide.insuf?' '+S.tricuspide.insuf:''} con gradiente pico al final de sístole de ${S.tricuspide.sxx} mmHg.`);
+  if(S.derNoValorable) dopLines.push('Flujos Doppler en cavidades derechas no valorables.');
   if(!S.mitral.insuf && !S.aortica.insuf && !S.pulmonar.insuf && S.tricuspide.sxx===null) dopLines.push('No se aprecia turbulencias en planos examinados.');
   desc.dop = dopLines;
 
   // ---- CONCLUSIONES ----
   let concl = [];
   concl.push(`ESTUDIO ECOCARDIOGRAFICO REALIZADO EN RITMO ${S.ritmo}.`);
+  S.arritmiaConcl.forEach(a => concl.push(a+'.'));
 
   // Masas intracardíacas: máxima prioridad clínica, se concluyen primero
   S.masas.forEach(m => concl.push(m.toUpperCase()+'.'));
@@ -771,6 +811,7 @@ function construirInforme(ctx){
   if(gradoDiast && gradoDiast!=='INDETERMINADO') concl.push(gradoDiast.toUpperCase()+'.');
 
   if(!S.contractilidad.ok) concl.push('CARDIOPATIA ISQUEMICA CON ALTERACION SEGMENTARIA COMPATIBLE CON NECROSIS MIOCARDICA O INFARTO EN EVOLUCION.');
+  if(feBorderline) concl.push('LEVE HIPOQUINESIA GENERALIZADA.');
   if(S.vi.aneurisma) concl.push(`ANEURISMA APICAL DEL VENTRICULO IZQUIERDO DE ${S.vi.aneurisma} CM.`);
   if(S.vi.hvi==='HVI') concl.push('HIPERTROFIA VENTRICULAR IZQUIERDA.');
   if(S.vi.hvi==='leve') concl.push('LEVE HIPERTROFIA VENTRICULAR IZQUIERDA.');
@@ -851,7 +892,8 @@ function construirInforme(ctx){
   let probHP = 'BAJA';
   const sxx = S.tricuspide.sxx;
   const tapseBajo = (S.tapse!==undefined && S.tapse!==null && S.tapse<17);
-  const sobrecarga = S.vd.dilatado || S.ad.estado!=='normal' || !!S.tabiques.sobrecarga || tapseBajo;
+  const vdHipertrofia = (S.vd.pared!==undefined && S.vd.pared!==null && S.vd.pared>0.5);
+  const sobrecarga = S.vd.dilatado || S.ad.estado!=='normal' || !!S.tabiques.sobrecarga || tapseBajo || vdHipertrofia;
   if(sxx!==null){
     if(sxx<=40) probHP='BAJA';
     else probHP = sobrecarga ? 'ALTA' : 'INTERMEDIA';
@@ -866,6 +908,7 @@ function construirInforme(ctx){
       hallazgosHP.push(map[S.tabiques.sobrecarga]);
     }
     if(tapseBajo) hallazgosHP.push('disfunción sistólica del ventrículo derecho (TAPSE bajo)');
+    if(vdHipertrofia) hallazgosHP.push('hipertrofia del ventrículo derecho');
   }
   const sufijoHP = hallazgosHP.length ? ` CON ${hallazgosHP.join(', ').toUpperCase()}` : '';
   concl.push(sxx!==null ? `REGURGITACION VALVULAR TRICUSPIDEA CON ${fraseProb} PARA HIPERTENSION PULMONAR${sufijoHP}.` : `${fraseProb} PARA HIPERTENSION PULMONAR${sufijoHP}.`);
