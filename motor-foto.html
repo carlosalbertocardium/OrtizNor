@@ -505,6 +505,7 @@ function interpretarLinea(raw, S){
   if(/^CPAP\b/i.test(line)){ S.condiciones.push('paciente en CPAP'); return; }
   if(/^(SS|SEMISENT|SEMISENTADO)\b/i.test(line)){ S.condiciones.push('paciente semisentado'); return; }
   if(/^SILLA\b/i.test(line)){ S.condiciones.push('paciente sentado en silla'); return; }
+  if(/^EXCAVADO\b/i.test(line)){ S.condiciones.push('tórax excavado'); return; }
   if(/^SENTAD[AO]\b/i.test(line)){ S.condiciones.push('paciente en posición sentada'); return; }
   if(/^BCRI\b/i.test(line)){ S.condiciones.push('bloqueo completo de rama izquierda'); return; }
   if(/^BCRD\b/i.test(line)){ S.condiciones.push('bloqueo completo de rama derecha'); return; }
@@ -625,6 +626,7 @@ function interpretarLinea(raw, S){
   if(/^(HPQ|HPKG|HPKGRAL|HPK\s*GRAL|HPK\s*GENERALIZADA|HK\s*GRAL|HK\s*GENERALIZADA)/i.test(line)){ S.contractilidad.ok=false; S.contractilidad.alteraciones.push('Hipoquinesia generalizada'); return; }
 
   // --- MITRAL: morfología (em/EM/EM↑ son case-SENSITIVE, escala de severidad) ---
+  if(/^EM\s*\+?\s*ANILLO$/i.test(line)){ S.mitral.morfo='EM_ANILLO'; S.ultimaValvula='mitral'; return; }
   if(/^em$/.test(orig)){ S.mitral.morfo='em'; S.ultimaValvula='mitral'; return; }
   if(/^EMB$/.test(orig)){ S.mitral.morfo='EMB'; S.ultimaValvula='mitral'; return; }
   if(/^EM\s*↑$/.test(orig)){ S.mitral.morfo='EM↑'; S.ultimaValvula='mitral'; return; }
@@ -958,7 +960,7 @@ function construirInforme(ctx){
   if(S.vi.granulado) viLine += ' Se aprecia patrón de puntuado en espesor del miocardio ventricular izquierdo que sugiere infiltración.';
   desc.cav.push(viLine);
 
-  const laviTxt = (S.ai.volumenTotal && laviIndexado) ? ` y volumen de ${S.ai.volumenTotal} ml (Volumen AI ${laviIndexado} ml/m²)` : (S.ai.volumenTotal ? ` y volumen de ${S.ai.volumenTotal} ml` : '');
+  const laviTxt = (S.ai.volumenTotal && laviIndexado) ? ` y volumen total de ${S.ai.volumenTotal} cc (Volumen AI indexado ${laviIndexado} cc/m²)` : (S.ai.volumenTotal ? ` y volumen total de ${S.ai.volumenTotal} cc` : '');
   if(S.ai.estado==='normal') desc.cav.push(`Aurícula izquierda de tamaño normal.${S.ai.area? ' Área auricular de '+S.ai.area+' cm²'+laviTxt+'.':''}`);
   else if(S.ai.estado==='dilatada'){
     if(aiDilatadaPorDiametro) desc.cav.push(`Aurícula izquierda dilatada. Diámetro de ${aiDiamCm.toFixed(1)} cm.`);
@@ -987,7 +989,7 @@ function construirInforme(ctx){
   if(S.tabiques.civ) tabLines.push(`Solución de continuidad en tabique interventricular (${S.tabiques.civ}).`);
   if(S.tabiques.fop) tabLines.push(`Septum interauricular con separación de septum primum y secundum formando túnel de ${S.tabiques.fop.long} mm de longitud y ${S.tabiques.fop.diam} mm de diámetro.`);
   if(S.tabiques.fopDudoso) tabLines.push('Imagen dudosa de solución de continuidad a nivel del túnel oval, no concluyente.');
-  if(S.tabiques.an) tabLines.push(`Aneurisma del septum interauricular con base de ${S.tabiques.an.base} mm y desplazamiento de ${S.tabiques.an.despl} mm, sin evidencia de solución de continuidad.`);
+  if(S.tabiques.an) tabLines.push(`Adelgazamiento aneurismático del septum interauricular en su tercio medio de ${S.tabiques.an.base} x ${S.tabiques.an.despl} mm.`);
   if(S.tabiques.sobrecarga) {
     const map={sistolica:'sístole', diastolica:'diástole', combinada:'sístole y diástole'};
     tabLines.push(`Rectificación septal en ${map[S.tabiques.sobrecarga]}.`);
@@ -1055,7 +1057,8 @@ function construirInforme(ctx){
   desc.valv.push(aorticaTxt);
 
   const morfoTextoM = {EM:'esclerosis en sus hojuelas', 'em':'leve esclerosis en sus hojuelas', 'EM↑':'esclerosis y engrosamiento en sus hojuelas',
-    CM:'esclerosis y calcificación en sus hojuelas', 'CM..':'esclerosis con puntos de calcio en sus hojuelas', CMB:'esclerosis y calcificación del borde de sus hojuelas', 'CM↑':'engrosamiento, esclerosis y calcificación en sus hojuelas', EMB:'esclerosis y engrosamiento del borde de sus hojuelas'};
+    CM:'esclerosis y calcificación en sus hojuelas', 'CM..':'esclerosis con puntos de calcio en sus hojuelas', CMB:'esclerosis y calcificación del borde de sus hojuelas', 'CM↑':'engrosamiento, esclerosis y calcificación en sus hojuelas', EMB:'esclerosis y engrosamiento del borde de sus hojuelas',
+    EM_ANILLO:'esclerosis en sus hojuelas y calcio en su anillo'};
   let mitralTxt;
   if(S.mitral.protesis){
     mitralTxt = `Prótesis valvular mitral (${S.mitral.protesis}) normofuncionante.`;
@@ -1088,7 +1091,7 @@ function construirInforme(ctx){
   else if(S.diastole.tri) dopLines.push(`Llenado ventricular izquierdo con inversión de la relación de ondas E:A, con tiempo de relajación isovolumétrica de ${S.diastole.tri} ms.`);
   else dopLines.push('Llenado ventricular izquierdo normal.');
   if(S.diastole.ondaE!==undefined) dopLines.push(`Onda E de ${S.diastole.ondaE} cm/seg y onda A de ${S.diastole.ondaA} cm/seg (relación E/A de ${S.diastole.ea.toFixed(2)}).`);
-  if(S.mitral.avm!==undefined) dopLines.push(`Área valvular mitral calculada por hemipresión de ${S.mitral.avm} cm².`);
+  if(S.mitral.avm!==undefined && S.mitral.avm!==null) dopLines.push(`Área valvular mitral calculada por hemipresión de ${S.mitral.avm} cm².`);
   if(S.diastole.gradienteEMitral!==undefined) dopLines.push(`Gradiente pico de la onda E mitral de ${S.diastole.gradienteEMitral} mmHg.`);
   if(S.mitral.insuf) dopLines.push(`Jet de regurgitación valvular mitral ${S.mitral.insuf}, ${S.mitral.direccion==='excentrica' ? (S.mitral.direccionDetalle ? `excéntrico, ${S.mitral.direccionDetalle}` : 'excéntrico') : 'central hacia aurícula izquierda'}.`);
   if(S.aortica.insuf) dopLines.push(`Jet de regurgitación valvular aórtica ${S.aortica.insuf}, ${S.aortica.direccion==='excentrica' ? (S.aortica.direccionDetalle ? `excéntrico, ${S.aortica.direccionDetalle}` : 'excéntrico') : 'central hacia TSVI'}.`);
@@ -1145,7 +1148,12 @@ function construirInforme(ctx){
   } else if(S.tabiques.fopDudoso){
     concl.push('SUGESTIVO DE FORAMEN OVAL PERMEABLE.');
   }
-  if(S.tabiques.an) concl.push('ANEURISMA DEL SEPTUM INTERAURICULAR' + (S.tabiques.fop||S.tabiques.fopDudoso ? ' (HALLAZGO ESTRUCTURAL ASOCIADO)' : ', SIN EVIDENCIA DE CORTOCIRCUITO') + '.');
+  if(S.tabiques.an){
+    let sufijoAn = ', SIN EVIDENCIA DE CORTOCIRCUITO';
+    if(S.tabiques.fopDudoso) sufijoAn = ' (PROBABLE FORAMEN OVAL PERMEABLE)';
+    else if(S.tabiques.fop) sufijoAn = ' (ASOCIADO A FORAMEN OVAL PERMEABLE)';
+    concl.push('ANEURISMA DEL SEPTUM INTERAURICULAR' + sufijoAn + '.');
+  }
 
   // AI dilatada: se integra con IM si coexiste (se resuelve dentro del bloque mitral); si no hay IM, va sola
   let aiConclPendiente = null;
@@ -1158,7 +1166,8 @@ function construirInforme(ctx){
     let txt = '';
     const morfoConcl = {EM:'ESCLEROSIS VALVULAR MITRAL', em:'LEVE ESCLEROSIS VALVULAR MITRAL', 'EM↑':'ESCLEROSIS Y ENGROSAMIENTO VALVULAR MITRAL',
       CM:'ESCLEROSIS Y CALCIFICACION VALVULAR MITRAL', 'CM..':'ESCLEROSIS VALVULAR MITRAL CON CALCIFICACION PUNTIFORME', CMB:'ESCLEROSIS Y CALCIFICACION DEL BORDE VALVULAR MITRAL',
-      'CM↑':'ESCLEROSIS, ENGROSAMIENTO Y CALCIFICACION VALVULAR MITRAL', EMB:'ESCLEROSIS Y ENGROSAMIENTO VALVULAR MITRAL'};
+      'CM↑':'ESCLEROSIS, ENGROSAMIENTO Y CALCIFICACION VALVULAR MITRAL', EMB:'ESCLEROSIS Y ENGROSAMIENTO VALVULAR MITRAL',
+      EM_ANILLO:'ESCLEROSIS Y CALCIFICACION DEL ANILLO VALVULAR MITRAL'};
     if(S.mitral.morfo) txt = morfoConcl[S.mitral.morfo] || 'ESCLEROSIS VALVULAR MITRAL';
     if(S.mitral.cmp && !/CALCIFICACION/.test(txt)) txt = txt ? `${txt} CON CALCIFICACION DEL VELO POSTERIOR` : 'CALCIFICACION DEL VELO POSTERIOR MITRAL';
     if(S.mitral.cmp==='restriccion') txt += ' CON RESTRICCION DE SU MOVILIDAD';
@@ -1225,6 +1234,8 @@ function construirInforme(ctx){
   } else if(sobrecarga){
     probHP = 'INTERMEDIA'; // sin gradiente medido, pero hay signos de sobrecarga derecha -> no se puede asumir "baja"
   }
+  const sobrecargaSistolica = S.tabiques.sobrecarga==='sistolica' || S.tabiques.sobrecarga==='combinada';
+  if(sobrecargaSistolica) probHP = 'ALTA';
   if(S.corPulmonale) probHP = 'ALTA';
   const fraseProb = probHP==='INTERMEDIA' ? 'PROBABILIDAD INTERMEDIA' : `${probHP} PROBABILIDAD`;
   let hallazgosHP = [];
