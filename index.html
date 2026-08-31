@@ -663,6 +663,9 @@ function gradoRegurg(sufijo){
   const map = {'':'leve', T:'trivial', '2':'leve a moderada', M:'moderada', '3':'moderada a severa', '4':'severa'};
   return map[sufijo] !== undefined ? map[sufijo] : 'leve';
 }
+function gradoMasculino(g){
+  return g.replace('moderada','moderado').replace('severa','severo');
+}
 
 function clasificarAI(S){
   const a = S.ai.area;
@@ -963,10 +966,10 @@ function construirInforme(ctx){
   if(S.diastole.ondaE!==undefined) dopLines.push(`Onda E de ${S.diastole.ondaE} cm/seg y onda A de ${S.diastole.ondaA} cm/seg (relación E/A de ${S.diastole.ea.toFixed(2)}).`);
   if(S.mitral.avm!==undefined && S.mitral.avm!==null) dopLines.push(`Área valvular mitral calculada por hemipresión de ${S.mitral.avm} cm².`);
   if(S.diastole.gradienteEMitral!==undefined) dopLines.push(`Gradiente pico de la onda E mitral de ${S.diastole.gradienteEMitral} mmHg.`);
-  if(S.mitral.insuf) dopLines.push(`Jet de regurgitación valvular mitral ${S.mitral.insuf}, ${S.mitral.direccion==='excentrica' ? (S.mitral.direccionDetalle ? `excéntrico, ${S.mitral.direccionDetalle}` : 'excéntrico') : 'central hacia aurícula izquierda'}.`);
-  if(S.aortica.insuf) dopLines.push(`Jet de regurgitación valvular aórtica ${S.aortica.insuf}, ${S.aortica.direccion==='excentrica' ? (S.aortica.direccionDetalle ? `excéntrico, ${S.aortica.direccionDetalle}` : 'excéntrico') : 'central hacia TSVI'}.`);
-  if(S.pulmonar.insuf) dopLines.push(S.pulmonar.gradiente!==undefined ? `Jet de regurgitación valvular pulmonar ${S.pulmonar.insuf} hacia infundíbulo con gradiente al final de diástole de ${S.pulmonar.gradiente} mmHg.` : `Jet de regurgitación pulmonar ${S.pulmonar.insuf}.`);
-  if(S.tricuspide.sxx!==null) dopLines.push(`Jet de regurgitación tricuspídeo${S.tricuspide.insuf?' '+S.tricuspide.insuf:''} con gradiente pico al final de sístole de ${S.tricuspide.sxx} mmHg.`);
+  if(S.mitral.insuf) dopLines.push(`Jet de regurgitación valvular mitral ${gradoMasculino(S.mitral.insuf)}, ${S.mitral.direccion==='excentrica' ? (S.mitral.direccionDetalle ? `excéntrico, ${S.mitral.direccionDetalle}` : 'excéntrico') : 'central hacia aurícula izquierda'}.`);
+  if(S.aortica.insuf) dopLines.push(`Jet de regurgitación valvular aórtica ${gradoMasculino(S.aortica.insuf)}, ${S.aortica.direccion==='excentrica' ? (S.aortica.direccionDetalle ? `excéntrico, ${S.aortica.direccionDetalle}` : 'excéntrico') : 'central hacia TSVI'}.`);
+  if(S.pulmonar.insuf) dopLines.push(S.pulmonar.gradiente!==undefined ? `Jet de regurgitación valvular pulmonar ${gradoMasculino(S.pulmonar.insuf)} hacia infundíbulo con gradiente al final de diástole de ${S.pulmonar.gradiente} mmHg.` : `Jet de regurgitación pulmonar ${gradoMasculino(S.pulmonar.insuf)}.`);
+  if(S.tricuspide.sxx!==null) dopLines.push(`Jet de regurgitación tricuspídeo${S.tricuspide.insuf?' '+gradoMasculino(S.tricuspide.insuf):''} con gradiente pico al final de sístole de ${S.tricuspide.sxx} mmHg.`);
   if(S.derNoValorable) dopLines.push('Flujos Doppler en cavidades derechas no valorables.');
   if(S.gradienteDinamico!==undefined) dopLines.push(`Presencia de gradiente dinámico intraventricular de ${S.gradienteDinamico} mmHg.`);
   if(S.tap!==undefined && S.tap!==null) dopLines.push(`Tiempo de aceleración pulmonar de ${S.tap} ms.`);
@@ -1005,7 +1008,6 @@ function construirInforme(ctx){
   if(S.vi.granulado) concl.push('PATRON DE PUNTUADO EN EL ESPESOR DEL MIOCARDIO VENTRICULAR IZQUIERDO QUE SUGIERE INFILTRACION.');
   // (grasa epicárdica se mueve al final, ver antes de ECOCARDIOGRAMA NORMAL)
   if(S.derramePleural) concl.push('SUGIERE PRESENCIA DE DERRAME PLEURAL IZQUIERDO.');
-  if((S.vd.apexBi || S.vd.apexDer) && S.tricuspide.sxx===null) concl.push('DILATACION DE CAVIDADES DERECHAS.');
   if(S.electrodo) concl.push('PRESENCIA DE ELECTRODOS DE ESTIMULACION INTRACAVITARIOS EN CAVIDADES DERECHAS.');
   if(S.cateter) concl.push('PRESENCIA DE CATETER EN CAVIDADES DERECHAS.');
 
@@ -1120,7 +1122,14 @@ function construirInforme(ctx){
     if(vdHipertrofia) hallazgosHP.push('hipertrofia del ventrículo derecho');
   }
   const sufijoHP = hallazgosHP.length ? ` CON ${hallazgosHP.join(', ').toUpperCase()}` : '';
-  const prefijoHP = S.corPulmonale ? 'COR PULMONALE' : (sxx!==null ? 'REGURGITACION VALVULAR TRICUSPIDEA' : null);
+  let prefijoHP;
+  if(S.corPulmonale) prefijoHP = 'COR PULMONALE';
+  else {
+    const partesHP = [];
+    if(S.pulmonar.insuf) partesHP.push('PULMONAR');
+    if(sxx!==null) partesHP.push('TRICUSPIDEA');
+    prefijoHP = partesHP.length ? `REGURGITACION VALVULAR ${partesHP.join(' Y ')}` : null;
+  }
   if(S.tricuspide.insuf && sxx===null) concl.push(`INSUFICIENCIA VALVULAR TRICUSPIDEA ${S.tricuspide.insuf.toUpperCase()}.`);
   concl.push(prefijoHP ? `${prefijoHP} CON ${fraseProb} PARA HIPERTENSION PULMONAR${sufijoHP}.` : `${fraseProb} PARA HIPERTENSION PULMONAR${sufijoHP}.`);
 
