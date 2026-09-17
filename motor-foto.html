@@ -474,7 +474,7 @@ function nuevoEstado(){
     cv:{valor:null, colapsaOk:true, mencionado:false},
     diastole:{ea:null, eLat:null, eSep:null, eE:null, dt:null, tri:null, ddManual:null},
     tabiques:{cia:null, civ:null, fop:null, fopDudoso:false, an:null, sobrecarga:null},
-    masas:[], ce:null, condiciones:[], arritmiaConcl:[],
+    masas:[], masasConcl:[], ce:null, condiciones:[], arritmiaConcl:[],
     unresolved:[]
   };
 }
@@ -631,6 +631,7 @@ function interpretarLinea(raw, S){
   if(/^EM\s*\+?\s*ANILLO$/i.test(line)){ S.mitral.morfo='EM_ANILLO'; S.ultimaValvula='mitral'; return; }
   if(/^CM\s*\+?\s*ANILLO$/i.test(line)){ S.mitral.morfo='CM_ANILLO'; S.ultimaValvula='mitral'; return; }
   if(/^em$/.test(orig)){ S.mitral.morfo='em'; S.ultimaValvula='mitral'; return; }
+  if(/^em\s*↑$/.test(orig)){ S.mitral.morfo='em↑'; S.ultimaValvula='mitral'; return; }
   if(/^EMB$/.test(orig)){ S.mitral.morfo='EMB'; S.ultimaValvula='mitral'; return; }
   if(/^EM\s*↑$/.test(orig)){ S.mitral.morfo='EM↑'; S.ultimaValvula='mitral'; return; }
   if(/^EM$/.test(orig)){ S.mitral.morfo='EM'; S.ultimaValvula='mitral'; return; }
@@ -647,7 +648,7 @@ function interpretarLinea(raw, S){
   if(/^DOMO/i.test(line)){ S.mitral.domo = true; return; }
   if(m = line.match(/^SM\b/i)){ S.mitral.sm = true; return; }
   if(m = line.match(/^AVM\s*(\d+(?:[.,]\d+)?)/i)){ S.mitral.avm = parseFloat(m[1].replace(',','.')); return; }
-  if(m = line.match(/^PM([123])/i)){ S.mitral.prolapso = true; return; }
+  if(m = line.match(/^PM([123])/i)){ S.mitral.prolapso = m[1]; return; }
 
   // --- MITRAL: insuficiencia ---
   if(m = line.match(/^IM\s*(4|3|2|M|T)?\s*(exc\s*\w+|lat|inf|medial|m)?/i)){
@@ -703,8 +704,8 @@ function interpretarLinea(raw, S){
   if(m = line.match(/^IP\s*(\d+(?:\.\d+)?)?/i)){ S.pulmonar.insuf = 'leve'; if(m[1]) S.pulmonar.gradiente = parseFloat(m[1]); return; }
   if(/^EP\b/i.test(line)){ S.pulmonar.esclerosis = true; return; }
   if(/^SP\b/i.test(line)){ S.pulmonar.estenosis = true; return; }
-  if(m = line.match(/^PVAM|PVAB\b/i)){ S.aortica.protesis = orig.toUpperCase(); return; }
-  if(m = line.match(/^PVMM|PVMB\b/i)){ S.mitral.protesis = orig.toUpperCase(); return; }
+  if(m = line.match(/^(PVAM|PVAB)\b/i)){ S.aortica.protesis = m[1].toUpperCase(); return; }
+  if(m = line.match(/^(PVMM|PVMB)\b/i)){ S.mitral.protesis = m[1].toUpperCase(); return; }
 
   // --- TABIQUES ---
   if(m = line.match(/^FOP\s*(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)/i)){
@@ -760,9 +761,15 @@ function interpretarLinea(raw, S){
   // --- MASAS Y CONTRASTE ---
   if(m = line.match(/^TX(MU|M|P|O)?\s*(?:(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?))?\s*(\w+)?\s*$/i)){
     const tipo = {MU:'mural',M:'móvil',P:'pediculado',O:'organizado','':''}[m[1]?m[1].toUpperCase():''];
+    const esApexVIporDefecto = !m[4] || /^(VI|APEX)$/i.test(m[4]);
     const loc = m[4] ? m[4] : 'ápex del ventrículo izquierdo';
     const medidas = (m[2] && m[3]) ? ` de ${m[2]} × ${m[3]} mm` : '';
-    S.masas.push(`Trombo ${tipo?tipo+' ':''}en ${loc}${medidas}`);
+    if(esApexVIporDefecto){
+      S.vi.tromboApical = { tipo, medidas };
+      S.masasConcl.push(`Trombo ${tipo?tipo+' ':''}en ápex del ventrículo izquierdo${medidas}`);
+    } else {
+      S.masas.push(`Trombo ${tipo?tipo+' ':''}en ${loc}${medidas}`);
+    }
     return;
   }
   if(m = line.match(/^CE([123])?\b/i)){
@@ -970,6 +977,7 @@ function construirInforme(ctx){
   if(S.vi.papilar) viLine += ' Hipertrofia de músculos papilares.';
   if(S.vi.aneurisma) viLine += ` Dilatación aneurismática apical en ventrículo izquierdo de ${S.vi.aneurisma} cm de diámetro.`;
   if(S.ce) viLine += ` Contraste espontáneo ${S.ce!=='sin especificar'?S.ce+' ':''}intracavitario.`;
+  if(S.vi.tromboApical) viLine += ` Imagen ecodensa en ápex cardiaco que sugiere trombo${S.vi.tromboApical.tipo?' '+S.vi.tromboApical.tipo:''}${S.vi.tromboApical.medidas}.`;
   if(S.vi.granulado) viLine += ' Se aprecia patrón de puntuado en espesor del miocardio ventricular izquierdo que sugiere infiltración.';
   desc.cav.push(viLine);
 
@@ -1056,7 +1064,7 @@ function construirInforme(ctx){
     EA_ANILLO:'esclerosis en sus hojuelas y calcio en su anillo valvular', CA_ANILLO:'esclerosis y calcificación en sus hojuelas y calcio en su anillo valvular'};
   let aorticaTxt;
   if(S.aortica.protesis){
-    aorticaTxt = `Prótesis valvular aórtica (${S.aortica.protesis}) normofuncionante.`;
+    aorticaTxt = S.aortica.protesis==='PVAB' ? 'Prótesis biológica en posición aórtica con mecanismo oclusor funcionante.' : `Prótesis valvular aórtica (${S.aortica.protesis}) normofuncionante.`;
   } else {
     const aperturaTxt = S.aortica.sa ? 'con limitación para su apertura' : 'con apertura conservada';
     aorticaTxt = `Aórtica trivalva ${aperturaTxt} y cierre central.`;
@@ -1071,24 +1079,31 @@ function construirInforme(ctx){
   }
   desc.valv.push(aorticaTxt);
 
-  const morfoTextoM = {EM:'esclerosis en sus hojuelas', 'em':'leve esclerosis en sus hojuelas', 'EM↑':'esclerosis y engrosamiento en sus hojuelas',
+  const morfoTextoM = {EM:'esclerosis en sus hojuelas', 'em':'leve esclerosis en sus hojuelas', 'EM↑':'esclerosis y engrosamiento en sus hojuelas', 'em↑':'leve esclerosis y engrosamiento en sus hojuelas',
     CM:'esclerosis y calcificación en sus hojuelas', 'CM..':'esclerosis con puntos de calcio en sus hojuelas', CMB:'esclerosis y calcificación del borde de sus hojuelas', 'CM↑':'engrosamiento, esclerosis y calcificación en sus hojuelas', EMB:'esclerosis y engrosamiento del borde de sus hojuelas',
     EM_ANILLO:'esclerosis en sus hojuelas y calcio en su anillo', CM_ANILLO:'esclerosis y calcificación en sus hojuelas y calcio en su anillo'};
   let mitralTxt;
   if(S.mitral.protesis){
     mitralTxt = `Prótesis valvular mitral (${S.mitral.protesis}) normofuncionante.`;
+  } else if(S.mitral.sm){
+    mitralTxt = S.mitral.morfo ? `Mitral con ${morfoTextoM[S.mitral.morfo]||'esclerosis'}, con restricción de su apertura` : 'Válvula mitral con restricción de su apertura';
+    mitralTxt += (S.mitral.domo?', con apertura en domo del velo anterior':'') + (S.mitral.avm?`, área valvular de ${S.mitral.avm} cm² por hemipresión`:'') + '.';
   } else {
-    if(S.mitral.prolapso) mitralTxt = 'Mitral con prolapso valvular.';
-    else if(S.mitral.sm){
-      mitralTxt = S.mitral.morfo ? `Mitral con ${morfoTextoM[S.mitral.morfo]||'esclerosis'}, con restricción de su apertura` : 'Válvula mitral con restricción de su apertura';
-      mitralTxt += (S.mitral.domo?', con apertura en domo del velo anterior':'') + (S.mitral.avm?`, área valvular de ${S.mitral.avm} cm² por hemipresión`:'') + '.';
+    const severidadProlapso = {'1':'leve', '2':'moderado', '3':'marcado'}[S.mitral.prolapso] || '';
+    const prolapsoTexto = `prolapso ${severidadProlapso} de sus velos`;
+    let base = '';
+    if(S.mitral.morfo) base = morfoTextoM[S.mitral.morfo]||'esclerosis';
+    if(S.mitral.prolapso) base = base ? `${base} y ${prolapsoTexto}` : prolapsoTexto;
+    if(S.mitral.cmp==='restriccion'){
+      mitralTxt = base ? `Mitral con ${base}.` : 'Válvula mitral';
+      mitralTxt += ` Calcio en el velo posterior de la válvula mitral${S.mitral.cmpValor!==undefined?`, de ${S.mitral.cmpValor.toFixed(1)} cm de espesor,`:','} con restricción de su excursión.`;
+    } else {
+      if(base) mitralTxt = `Mitral con ${base}, excursionando adecuadamente.`;
+      else if(S.mitral.cmp || S.mitral.anillo) mitralTxt = 'Mitral excursionando adecuadamente.';
+      else mitralTxt = 'Mitral normal excursionando adecuadamente.';
+      if(S.mitral.cmp==='simple') mitralTxt += ` Calcio en el velo posterior de la válvula mitral${S.mitral.cmpValor!==undefined?`, de ${S.mitral.cmpValor.toFixed(1)} cm de espesor`:''}.`;
     }
-    else if(S.mitral.morfo) mitralTxt = `Mitral con ${morfoTextoM[S.mitral.morfo]||'esclerosis'}, excursionando adecuadamente.`;
-    else if(S.mitral.cmp || S.mitral.anillo) mitralTxt = 'Mitral excursionando adecuadamente.';
-    else mitralTxt = 'Mitral normal excursionando adecuadamente.';
     if(S.mitral.anillo) mitralTxt += ' Anillo valvular calcificado.';
-    if(S.mitral.cmp==='simple') mitralTxt += ` Calcio en el velo posterior de la válvula mitral${S.mitral.cmpValor!==undefined?`, de ${S.mitral.cmpValor.toFixed(1)} cm de espesor`:''}.`;
-    if(S.mitral.cmp==='restriccion') mitralTxt += ` Calcio en el velo posterior de la válvula mitral${S.mitral.cmpValor!==undefined?`, de ${S.mitral.cmpValor.toFixed(1)} cm de espesor,`:','} con restricción de su excursión.`;
   }
   desc.valv.push(mitralTxt);
 
@@ -1124,11 +1139,16 @@ function construirInforme(ctx){
 
   // ---- CONCLUSIONES ----
   let concl = [];
-  concl.push(`ESTUDIO ECOCARDIOGRAFICO REALIZADO EN RITMO ${S.ritmo}${S.bigeminismo ? ' CON BIGEMINISMO EN EL MOMENTO' : ''}.`);
-  S.arritmiaConcl.forEach(a => concl.push(a+'.'));
+  let ritmoSufijos = [];
+  if(S.bigeminismo) ritmoSufijos.push('BIGEMINISMO EN EL MOMENTO');
+  if(S.arritmiaConcl.length) ritmoSufijos.push(...S.arritmiaConcl);
+  const ritmoSufijoTxt = ritmoSufijos.length ? ' CON ' + ritmoSufijos.join(' Y ') : '';
+  concl.push(`ESTUDIO ECOCARDIOGRAFICO REALIZADO EN RITMO ${S.ritmo}${ritmoSufijoTxt}.`);
+  // (arritmiaConcl ya se fusiona en la línea de apertura, ver arriba)
 
   // Masas intracardíacas: máxima prioridad clínica, se concluyen primero
   S.masas.forEach(m => concl.push(m.toUpperCase()+'.'));
+  S.masasConcl.forEach(m => concl.push(m.toUpperCase()+'.'));
 
   const ceSufijo = S.ce ? ` CON CONTRASTE ESPONTANEO ${S.ce!=='sin especificar'?S.ce.toUpperCase()+' ':''}INTRACAVITARIO` : '';
   let hviSufijo = '';
@@ -1137,17 +1157,21 @@ function construirInforme(ctx){
     else if(patronGeometrico==='excentrica') hviSufijo = ' CON HIPERTROFIA VENTRICULAR IZQUIERDA DE PATRON EXCENTRICO';
     else hviSufijo = ' CON HIPERTROFIA VENTRICULAR IZQUIERDA';
   } else if(S.vi.hvi==='leve') hviSufijo = ' CON LEVE HIPERTROFIA VENTRICULAR IZQUIERDA';
+  let dilatacionVISufijo = '';
+  if(S.vi.dilatado && patronGeometrico!=='excentrica' && patronGeometrico!=='remodelado_excentrico'){
+    dilatacionVISufijo = ' CON DILATACION DEL VENTRICULO IZQUIERDO';
+  }
   const estadoFuncion = contractilidadGlobalTxt==='severamente disminuida'?'SEVERAMENTE DISMINUIDA':(contractilidadGlobalTxt==='disminuida'?'DISMINUIDA':(contractilidadGlobalTxt==='límítrofe'?'LIMITROFE':'CONSERVADA'));
   if(S.contractilidad.alteraciones.length>0){
     if(estadoFuncion==='CONSERVADA'){
-      concl.push(`FUNCION VENTRICULAR IZQUIERDA CONSERVADA CON ALTERACIONES SEGMENTARIAS QUE SUGIEREN SUSTRATO ISQUEMICO${hviSufijo}${ceSufijo}.`);
+      concl.push(`FUNCION VENTRICULAR IZQUIERDA CONSERVADA CON ALTERACIONES SEGMENTARIAS QUE SUGIEREN SUSTRATO ISQUEMICO${dilatacionVISufijo}${hviSufijo}${ceSufijo}.`);
     } else {
-      concl.push(`FUNCION VENTRICULAR IZQUIERDA ${estadoFuncion} DE ORIGEN ISQUEMICO CON ALTERACIONES SEGMENTARIAS${hviSufijo}${ceSufijo}.`);
+      concl.push(`FUNCION VENTRICULAR IZQUIERDA ${estadoFuncion} DE ORIGEN ISQUEMICO CON ALTERACIONES SEGMENTARIAS${dilatacionVISufijo}${hviSufijo}${ceSufijo}.`);
     }
   } else if(hipoquinesiaDefault!==null){
-    concl.push(`FUNCION SISTOLICA VENTRICULAR IZQUIERDA ${estadoFuncion} CON ${hipoquinesiaDefault?hipoquinesiaDefault.toUpperCase()+' ':''}HIPOQUINESIA GENERALIZADA${hviSufijo}${ceSufijo}.`);
+    concl.push(`FUNCION SISTOLICA VENTRICULAR IZQUIERDA ${estadoFuncion} CON ${hipoquinesiaDefault?hipoquinesiaDefault.toUpperCase()+' ':''}HIPOQUINESIA GENERALIZADA${dilatacionVISufijo}${hviSufijo}${ceSufijo}.`);
   } else {
-    concl.push(`FUNCION SISTOLICA VENTRICULAR IZQUIERDA ${estadoFuncion}${hviSufijo}${ceSufijo}.`);
+    concl.push(`FUNCION SISTOLICA VENTRICULAR IZQUIERDA ${estadoFuncion}${dilatacionVISufijo}${hviSufijo}${ceSufijo}.`);
   }
 
   if(gradoDiast && gradoDiast!=='INDETERMINADO') concl.push(gradoDiast.toUpperCase()+'.');
@@ -1186,9 +1210,9 @@ function construirInforme(ctx){
   if(S.mitral.protesis){
     concl.push(S.mitral.insuf ? `PROTESIS VALVULAR MITRAL (${S.mitral.protesis}) CON INSUFICIENCIA ${S.mitral.insuf.toUpperCase()}${S.mitral.direccion==='excentrica'?', EXCENTRICA':''}.` : `PROTESIS VALVULAR MITRAL (${S.mitral.protesis}) NORMOFUNCIONANTE.`);
   }
-  if(!S.mitral.protesis && (S.mitral.morfo || S.mitral.insuf || S.mitral.anillo || S.mitral.cmp)){
+  if(!S.mitral.protesis && (S.mitral.morfo || S.mitral.insuf || S.mitral.anillo || S.mitral.cmp || S.mitral.prolapso)){
     let txt = '';
-    const morfoConcl = {EM:'ESCLEROSIS VALVULAR MITRAL', em:'LEVE ESCLEROSIS VALVULAR MITRAL', 'EM↑':'ESCLEROSIS Y ENGROSAMIENTO VALVULAR MITRAL',
+    const morfoConcl = {EM:'ESCLEROSIS VALVULAR MITRAL', em:'LEVE ESCLEROSIS VALVULAR MITRAL', 'EM↑':'ESCLEROSIS Y ENGROSAMIENTO VALVULAR MITRAL', 'em↑':'LEVE ESCLEROSIS VALVULAR MITRAL CON ENGROSAMIENTO DE SUS VELOS',
       CM:'ESCLEROSIS Y CALCIFICACION VALVULAR MITRAL', 'CM..':'ESCLEROSIS VALVULAR MITRAL CON CALCIFICACION PUNTIFORME', CMB:'ESCLEROSIS Y CALCIFICACION DEL BORDE VALVULAR MITRAL',
       'CM↑':'ESCLEROSIS, ENGROSAMIENTO Y CALCIFICACION VALVULAR MITRAL', EMB:'ESCLEROSIS Y ENGROSAMIENTO VALVULAR MITRAL',
       EM_ANILLO:'ESCLEROSIS Y CALCIFICACION DEL ANILLO VALVULAR MITRAL', CM_ANILLO:'ESCLEROSIS, CALCIFICACION VALVULAR Y DEL ANILLO MITRAL'};
@@ -1196,15 +1220,19 @@ function construirInforme(ctx){
     if(S.mitral.cmp && !/CALCIFICACION/.test(txt)) txt = txt ? `${txt} CON CALCIFICACION DEL VELO POSTERIOR` : 'CALCIFICACION DEL VELO POSTERIOR MITRAL';
     if(S.mitral.cmp==='restriccion') txt += ' CON RESTRICCION DE SU MOVILIDAD';
     if(S.mitral.anillo) txt += (txt?'.  LEVE CALCIO EN SU ANILLO':'LEVE CALCIO EN EL ANILLO VALVULAR MITRAL');
+    if(S.mitral.prolapso){
+      const severidadProlapsoConcl = {'1':'LEVE', '2':'MODERADO', '3':'MARCADO'}[S.mitral.prolapso] || '';
+      const prolapsoConcl = `PROLAPSO ${severidadProlapsoConcl} DE SUS VELOS`;
+      txt = txt ? `${txt} Y ${prolapsoConcl}` : `VALVULA MITRAL CON ${prolapsoConcl}`;
+    }
     if(S.mitral.insuf){
       const grado = S.mitral.insuf.toUpperCase();
       txt = txt ? `${txt} CON INSUFICIENCIA ${grado}` : `INSUFICIENCIA VALVULAR MITRAL ${grado}`;
       if(S.mitral.direccion==='excentrica') txt += ', EXCENTRICA';
-      if(aiConclPendiente){ txt += ` CON ${aiConclPendiente} ASOCIADA`; aiConclPendiente = null; }
     }
+    if(aiConclPendiente){ txt += ` CON ${aiConclPendiente} ASOCIADA`; aiConclPendiente = null; }
     concl.push(txt + '.');
   }
-  if(S.mitral.prolapso) concl.push('PROLAPSO VALVULAR MITRAL.');
   if(S.mitral.sm){
     let estenosisTxt = 'ESTENOSIS MITRAL';
     if(S.mitral.avm!==null){
@@ -1218,7 +1246,11 @@ function construirInforme(ctx){
 
   // Aortica
   if(S.aortica.protesis){
-    concl.push(S.aortica.insuf ? `PROTESIS VALVULAR AORTICA (${S.aortica.protesis}) CON INSUFICIENCIA ${S.aortica.insuf.toUpperCase()}${S.aortica.direccion==='excentrica'?', EXCENTRICA':''}.` : `PROTESIS VALVULAR AORTICA (${S.aortica.protesis}) NORMOFUNCIONANTE.`);
+    if(S.aortica.protesis==='PVAB'){
+      concl.push(S.aortica.insuf ? `PROTESIS VALVULAR AORTICA BIOLOGICA CON INSUFICIENCIA ${S.aortica.insuf.toUpperCase()}${S.aortica.direccion==='excentrica'?', EXCENTRICA':''}.` : 'PROTESIS VALVULAR AORTICA BIOLOGICA FUNCIONANTE.');
+    } else {
+      concl.push(S.aortica.insuf ? `PROTESIS VALVULAR AORTICA (${S.aortica.protesis}) CON INSUFICIENCIA ${S.aortica.insuf.toUpperCase()}${S.aortica.direccion==='excentrica'?', EXCENTRICA':''}.` : `PROTESIS VALVULAR AORTICA (${S.aortica.protesis}) NORMOFUNCIONANTE.`);
+    }
   }
   if(!S.aortica.protesis && (S.aortica.morfo || S.aortica.insuf || S.aortica.anillo || raizDilatada || S.aortica.sa)){
     let txt = '';
@@ -1257,7 +1289,7 @@ function construirInforme(ctx){
   const vdHipertrofia = (S.vd.pared!==undefined && S.vd.pared!==null && S.vd.pared>0.5);
   const sobrecarga = S.vd.dilatado || S.ad.estado!=='normal' || !!S.tabiques.sobrecarga || tapseBajo || vdHipertrofia;
   if(sxx!==null){
-    if(sxx<=40) probHP='BAJA';
+    if(sxx<40) probHP='BAJA';
     else probHP = sobrecarga ? 'ALTA' : 'INTERMEDIA';
   } else if(sobrecarga){
     probHP = 'INTERMEDIA'; // sin gradiente medido, pero hay signos de sobrecarga derecha -> no se puede asumir "baja"
@@ -1309,7 +1341,7 @@ function construirInforme(ctx){
     !S.vd.apexBi && !S.vd.apexDer && !S.electrodo && !S.cateter && !vdHipertrofia && !S.derNoValorable &&
     !S.tabiques.cia && !S.tabiques.civ && !S.tabiques.fop && !S.tabiques.fopDudoso && !S.tabiques.an && !S.tabiques.sobrecarga &&
     !S.pericardio.peric && !S.pericardio.dpCm && !S.pericardio.dpCc && !S.pericardio.grasa && !S.grasaEpicardica && !S.derramePleural && probHP==='BAJA' &&
-    !gradoDiast && S.masas.length===0 && !S.ce && S.arritmiaConcl.length===0;
+    !gradoDiast && S.masas.length===0 && !S.vi.tromboApical && !S.ce && S.arritmiaConcl.length===0;
   if(sinHallazgos) concl.push('ECOCARDIOGRAMA NORMAL.');
 
   // ---- ENSAMBLAR TEXTO ----
@@ -1412,7 +1444,7 @@ function parseBloque(bloque){
     const mCama = primera.match(/^CAMA\s*:\s*(.+)/i);
     if(mCama) primera = mCama[1].trim();
     const mJunto = primera.match(/^(AMB|\d+[A-Za-z]*)\s+(.+)/i);
-    if(mJunto){
+    if(mJunto && /\s/.test(mJunto[2].trim())){
       if(/^AMB/i.test(mJunto[1])) ctx.modo='amb'; else ctx.cama = mJunto[1];
       ctx.nombre = mJunto[2].trim();
       nombreYaCapturado = true;
