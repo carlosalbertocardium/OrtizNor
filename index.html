@@ -323,6 +323,9 @@ function generarColumnas(){
 function num(v){ if(v===''||v===null||v===undefined) return null; const n=parseFloat(v); return isNaN(n)?null:n; }
 function fmt(n){ return (n===null||n===undefined) ? null : n.toFixed(1); }
 function sinTildes(s){ return s.normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
+// '12' (entero) = mm -> cm ; '1.2' / '1,2' (con decimal) = cm
+function fCm(v){ return Number.isInteger(v) ? v.toFixed(1) : String(v); }
+function aCm(t){ const x=String(t).replace(',','.'); const v=parseFloat(x); return /\./.test(x) ? v : v/10; }
 
 // ============================================================
 // MOTOR DE INTERPRETACIÓN DE CÓDIGOS
@@ -340,6 +343,7 @@ function nuevoEstado(){
     aortica:{morfo:null, anillo:false, insuf:null, direccion:null, sa:false, gPico:null, gMedio:null, ava:null},
     tricuspide:{morfo:null, insuf:null, sxx:null, vc:null},
     pulmonar:{insuf:null, estenosis:false, esclerosis:false},
+    __ov:{}, masasDesc:[],
     pericardio:{peric:false, dpCm:null, dpCc:null, dppCm:null, dppCc:null, adDown:null, m:null, t:null},
     cv:{valor:null, colapsaOk:true, mencionado:false},
     diastole:{ea:null, eLat:null, eSep:null, eE:null, dt:null, tri:null, ddManual:null},
@@ -383,10 +387,13 @@ function interpretarLinea(raw, S){
   if(/^BAV\s*2\b/i.test(line)){ S.condiciones.push('bloqueo auriculoventricular de segundo grado'); return; }
   if(/^MOBITZ\s*II\b/i.test(line)){ S.condiciones.push('bloqueo auriculoventricular de segundo grado tipo Mobitz II'); return; }
   if(/^MOBITZ\s*I\b/i.test(line)){ S.condiciones.push('bloqueo auriculoventricular de segundo grado tipo Mobitz I'); return; }
-  if(/^BIGEMINISMO\b/i.test(line)){ S.bigeminismo = true; return; }
+  if(/^BIGEMIN(ISMO|A)\b/i.test(line)){ S.bigeminismo = true; return; }
   if(/^T\.?T\.?$/i.test(line)){ S.condiciones.push('paciente con toracostomía'); return; }
-  if(/^4C\?$/i.test(line)){ S.condiciones.push('mala ventana apical'); return; }
-  if(/^4C:?$/i.test(line)){ S.condiciones.push('estudio realizado en cortes apicales (4 cámaras)'); return; }
+  if(/^4\s*C\s*\?$/i.test(line)){ S.condiciones.push('mala ventana apical'); return; }
+  if(/^4\s*C\s*:?$/i.test(line)){ S.condiciones.push('estudio realizado en cortes apicales (4 cámaras)'); return; }
+  if(/^SX\s*:?$/i.test(line)){ S.condiciones.push('estudio realizado en cortes subxifoideos'); return; }
+  if(/^D\.?\s*DERECHO$/i.test(line)){ S.condiciones.push('paciente en decúbito derecho'); return; }
+  if(/^TRAQUEOSTOM[IÍ]A$/i.test(line)){ S.condiciones.push('paciente con traqueostomía'); return; }
   if(/^SX\?$/i.test(line)){ S.condiciones.push('mala ventana subxifoidea'); return; }
   if(/^PE\?$/i.test(line)){ S.condiciones.push('mala ventana paraesternal'); return; }
   if(/^ESV\b/i.test(line)){ S.condiciones.push('frecuente extrasistolia supraventricular'); S.arritmiaConcl.push('FRECUENTE EXTRASISTOLIA SUPRAVENTRICULAR'); return; }
@@ -441,6 +448,8 @@ function interpretarLinea(raw, S){
   if(m = line.match(/^AO\s*ST\s*(\d+(?:\.\d+)?)/i)){ let v=parseFloat(m[1]); if(!m[1].includes('.')) v=v/10; S.aoSinotubular = v; return; }
   if(m = line.match(/^AAA\s*(\d+(?:\.\d+)?)?/i)){ S.aortica.aneurismaAscendente = true; if(m[1]){ let v=parseFloat(m[1]); if(!m[1].includes('.')) v=v/10; S.aortica.aneurismaAscendenteValor = v; } return; }
   if(m = line.match(/^AT\s*(\d+(?:\.\d+)?)/i)){ let v=parseFloat(m[1]); if(!m[1].includes('.')) v=v/10; S.aortaArcoTransverso = v; return; }
+  if(m = line.match(/^SEPT(?:UM|IM)?\s*(\d+(?:[.,]\d+)?)$/i)){ S.__ov.septum = aCm(m[1]); return; }
+  if(m = line.match(/^DIASTOLE\s*(\d+(?:[.,]\d+)?)$/i)){ S.__ov.viDiast = aCm(m[1]); return; }
   if(/^(SEPTUM|SEPT)\s*↑\s*↓/i.test(line)){ S.septum.tipo='ambos'; return; }
   if(/^(SEPTUM|SEPT)\s*↓\s*↑/i.test(line)){ S.septum.tipo='ambos'; return; }
   if(/^(SEP|SEPT|SEPTUM)\s*VIBR/i.test(line)){ S.septum.tipo='vibratorio'; return; }
@@ -449,15 +458,16 @@ function interpretarLinea(raw, S){
   if(/^(SEPTUM|SEPT)\b/i.test(line)){ S.septum.tipo='hipertrofia_leve'; return; }
   if(/^CUERDA/i.test(line)){ S.cuerda = orig.replace(/^cuerda\s*/i,'').trim() || 'que va de la pared lateroapical al septum'; return; }
   if(/^PAPILAR(ES)?/i.test(line)){ S.vi.papilar = true; return; }
-  if(m = line.match(/^AN\s*VI\s*(\d+(?:\.\d+)?)/i)){ let v=parseFloat(m[1]); if(!m[1].includes('.')) v=v/10; S.vi.aneurisma = v; return; }
+  if(m = line.match(/^(?:AN\s*VI|ANV)\s*(\d+(?:[.,]\d+)?)/i)){ S.vi.aneurisma = aCm(m[1]); return; }
   if(/^VI\s*(↑|DIL)/i.test(line)){ S.vi.dilatado = true; return; }
+  if(/^DIL(ATADO)?$/i.test(line)){ S.vi.dilatado = true; return; }
   if(/^HVI/i.test(line)){ S.vi.hvi = 'HVI'; return; }
   if(/^GRANULADO/i.test(line)){ S.vi.granulado = true; return; }
   if(/^L?HVI|LEVE HVI/i.test(line)){ S.vi.hvi = 'leve'; return; }
 
   // --- CONTRACTILIDAD ---
   if(/^OK$/i.test(line)){ S.contractilidad.ok = true; S.contractilidad.explicitOk = true; return; }
-  if(m = line.match(/^(DK|AK|HK)-([ASLIP]{1,3})-([AMB]{1,3})$/i)){
+  if(m = line.match(/^(DK|AK|HK)\s*-\s*([ASLIP]{1,3})\s*-\s*([AMB]{1,3})$/i)){
     const TIPO_MAP = {DK:'Discinesia', AK:'Aquinesia', HK:'Hipoquinesia'};
     const PARED_MAP = {A:'anterior', S:'septal', L:'lateral', I:'inferior', P:'posterior'};
     const PARED_FUSION = {AS:'anteroseptal', SA:'anteroseptal', AL:'anterolateral', LA:'anterolateral',
@@ -482,7 +492,7 @@ function interpretarLinea(raw, S){
   if(/^APEX\s*↓/i.test(line)){ S.contractilidad.ok = false; S.contractilidad.alteraciones.push('Aquinesia del casquete apical'); return; }
   if(/^H$/i.test(line)){ S.sexo = 'H'; return; }
   if(/^M$/i.test(line)){ S.sexo = 'M'; return; }
-  if(/^SEG(MENTARIA)?\s*\?$/i.test(line)){ S.contractilidad.noValorable = true; return; }
+  if(/^SEG\w*\s*\?$/i.test(line)){ S.contractilidad.noValorable = true; return; }
   if(/^DISINCRONIA\b/i.test(line)){ S.contractilidad.disincronia = true; return; }
   if(/^(HPK\s*DEL\s*RESTO|RESTO)\b/i.test(line)){ S.contractilidad.ok=false; S.contractilidad.alteraciones.push('Hipoquinesia del resto de los segmentos'); return; }
   if(m = line.match(/^(AK|HK|HPK|DSK)\s+([a-zA-Z]+)\s+([a-zA-Z]+)/i)){
@@ -495,9 +505,10 @@ function interpretarLinea(raw, S){
     S.contractilidad.alteraciones.push(`${tipo} ${segStr} ${nivNames.join(' y ')}`.trim());
     return;
   }
-  if(/^(HPQ|HPKG|HPKGRAL|HPK\s*GRAL|HPK\s*GENERALIZADA|HK\s*GRAL|HK\s*GENERALIZADA)/i.test(line)){ S.contractilidad.ok=false; S.contractilidad.alteraciones.push('Hipoquinesia generalizada'); return; }
+  if(/^(HPQ|HPKG|HPKGRAL|HP?K\s*GRAL|HP?K\s*GENER\w*)/i.test(line)){ S.contractilidad.ok=false; S.contractilidad.alteraciones.push('Hipoquinesia generalizada'); return; }
 
   // --- MITRAL: morfología (em/EM/EM↑ son case-SENSITIVE, escala de severidad) ---
+  if(m = line.match(/^(EM|CM|EA|CA)\s*\+?\s*ANILLO\s*↑$/i)){ interpretarLinea(m[1]+'↑', S); interpretarLinea('ANILLO', S); return; }
   if(m = line.match(/^(EAB|CAB|EMB|CMB|EA\.\.|EM\.\.|CM\.\.|EM\s*↑|EA\s*↑|CA\s*↑|CM\s*↑)\s*\+?\s*ANILLO$/i)){
     interpretarLinea(m[1].replace(/\s+/g,''), S); interpretarLinea('ANILLO', S); return;
   }
@@ -521,7 +532,7 @@ function interpretarLinea(raw, S){
   if(/^DOMO/i.test(line)){ S.mitral.domo = true; return; }
   if(m = line.match(/^SM\b/i)){ S.mitral.sm = true; return; }
   if(m = line.match(/^AVM\s*(\d+(?:[.,]\d+)?)/i)){ S.mitral.avm = parseFloat(m[1].replace(',','.')); return; }
-  if(m = line.match(/^PM([123])/i)){ S.mitral.prolapso = m[1]; return; }
+  if(m = line.match(/^PM\s*([123])/i)){ S.mitral.prolapso = m[1]; return; }
 
   // --- MITRAL: insuficiencia ---
   if(m = line.match(/^IM\s*(4|3|2|M|T)?\s*(exc\s*\w+|lat|inf|medial|m)?/i)){
@@ -540,8 +551,9 @@ function interpretarLinea(raw, S){
   if(/^EA\s*\+?\s*ANILLO$/i.test(line)){ S.aortica.morfo='EA_ANILLO'; S.ultimaValvula='aortica'; return; }
   if(/^CA\s*\+?\s*ANILLO$/i.test(line)){ S.aortica.morfo='CA_ANILLO'; S.ultimaValvula='aortica'; return; }
   if(/^EAB/i.test(line)){ S.aortica.morfo='EAB'; S.ultimaValvula='aortica'; return; }
-  if(/^EA\.\./i.test(line)){ S.aortica.morfo='EA..'; S.ultimaValvula='aortica'; return; }
+  if(/^EA\s*(\.\.|…)/i.test(line)){ S.aortica.morfo='EA..'; S.ultimaValvula='aortica'; return; }
   if(/^CAB/i.test(line)){ S.aortica.morfo='CAB'; S.ultimaValvula='aortica'; return; }
+  if(/^BIVALVA\s*\?$/i.test(line)){ S.aortica.bivalva = true; S.ultimaValvula='aortica'; return; }
   if(/^CA\s*↑/i.test(line)){ S.aortica.morfo='CA↑'; S.ultimaValvula='aortica'; return; }
   if(/^EA\s*↑/i.test(line)){ S.aortica.morfo='CA↑'; S.ultimaValvula='aortica'; return; }
   if(/^CA$/i.test(line)){ S.aortica.morfo='CA'; S.ultimaValvula='aortica'; return; }
@@ -574,6 +586,8 @@ function interpretarLinea(raw, S){
   if(/^ST$/i.test(line)){ S.tricuspide.estenosis = true; return; }
 
   // --- PULMONAR ---
+  if(m = line.match(/^(?:APENDICE|AURICULILLA)\s*(\d+(?:[.,]\d+)?)\s*[\/xX]\s*(\d+(?:[.,]\d+)?)$/i)){ S.ai.apendice = { base: aCm(m[1]), prof: aCm(m[2]) }; return; }
+  if(m = line.match(/^P\s*↑\s*(\d+(?:[.,]\d+)?)$/i)){ S.pulmonar.troncoDil = aCm(m[1]); return; }
   if(m = line.match(/^IP\s*(\d+(?:\.\d+)?)?/i)){ S.pulmonar.insuf = 'leve'; if(m[1]) S.pulmonar.gradiente = parseFloat(m[1]); return; }
   if(/^EP\b/i.test(line)){ S.pulmonar.esclerosis = true; return; }
   if(/^SP\b/i.test(line)){ S.pulmonar.estenosis = true; return; }
@@ -599,6 +613,7 @@ function interpretarLinea(raw, S){
   if(/^S\/S/i.test(line)){ S.tabiques.sobrecarga = 'sistolica'; return; }
 
   // --- PERICARDIO ---
+  if(m = line.match(/^PERIC\s*(\d+(?:[.,]\d+)?)$/i)){ S.pericardio.peric = true; S.pericardio.dpNeutro = true; const v=parseFloat(m[1].replace(',','.')); if(v>=80) S.pericardio.dpCc=v; else S.pericardio.dpCm=v; return; }
   if(/^(PERIC|PERICARDIO)$/i.test(line)){ S.pericardio.peric = true; return; }
   if(/^GRASA\b/i.test(line)){ S.pericardio.grasa = true; return; }
   if(/^DPL\b/i.test(line)){ S.derramePleural = true; return; }
@@ -616,7 +631,7 @@ function interpretarLinea(raw, S){
     return;
   }
   if(m = line.match(/^M\s*(\d+)%/i)){ S.pericardio.m = parseInt(m[1]); return; }
-  if(m = line.match(/^M\s+(\d+(?:\.\d+)?)\s*\/\s*/i)){ S.diastole.gradienteEMitral = parseFloat(m[1]); return; }
+  if(m = line.match(/^M\s*(\d+(?:\.\d+)?)\s*\/\s*/i)){ S.diastole.gradienteEMitral = parseFloat(m[1]); return; }
   if(m = line.match(/^T\s*(\d+)%/i)){ S.pericardio.t = parseInt(m[1]); return; }
 
   // --- DIASTOLE ---
@@ -632,6 +647,17 @@ function interpretarLinea(raw, S){
   if(m = line.match(/^TAP\s*(\d+(?:\.\d+)?)/i)){ S.tap = parseFloat(m[1]); return; }
 
   // --- MASAS Y CONTRASTE ---
+  if(m = line.match(/^TX\s*\?\s*(?:(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?))?$/i)){
+    S.vi.tromboApical = { tipo:'', medidas: (m[1]&&m[2]) ? ` de ${m[1]} × ${m[2]} mm` : '' };
+    S.masasConcl.push('Sugiere la presencia de trombo en ventrículo izquierdo');
+    return;
+  }
+  if(m = line.match(/^ABSCESO\s*(?:(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?))?$/i)){
+    const dims = (m[1]&&m[2]) ? ` de ${fCm(aCm(m[1]))} x ${fCm(aCm(m[2]))} cm` : '';
+    S.masasDesc.push(`Imagen sugestiva de absceso perivalvular${dims}, asociada a prótesis valvular`);
+    S.masasConcl.push('Sugiere la presencia de absceso perivalvular asociado a prótesis valvular');
+    return;
+  }
   if(m = line.match(/^TX(MU|M|P|O)?\s*(?:(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?))?\s*(\w+)?\s*$/i)){
     const tipo = {MU:'mural',M:'móvil',P:'pediculado',O:'organizado','':''}[m[1]?m[1].toUpperCase():''];
     const esApexVIporDefecto = !m[4] || /^(VI|APEX)$/i.test(m[4]);
@@ -652,12 +678,14 @@ function interpretarLinea(raw, S){
   if(/^(HUMO|SMOK|SMOCK)/i.test(line)){ S.ce = 'sin especificar'; return; }
   if(/^ELECT?\s*.*$/i.test(line)){ S.electrodo = true; return; }
   if(/^CAT(ETER)?\b.*$/i.test(line)){ S.cateter = true; return; }
-  if(m = line.match(/^(VEG|MIX|TUM|FIB|LIP|CALC|DIS|CHI|EUS)\s*\??\s*(\d+(?:\.\d+)?)?\s*[xX]?\s*(\d+(?:\.\d+)?)?\s*(AI|AD|VI|VD|OI|OD|VM|VA|VT|VP|SIA|SIV|APEX)?\s*\??\s*$/i)){
+  if(m = line.match(/^(VEGETACION|VEG|MIX|TUM|FIB|LIP|CALC|DIS|CHI|EUSTACHIO|EUS)\s*\??\s*(\d+(?:\.\d+)?)?\s*[xX]?\s*(\d+(?:\.\d+)?)?\s*(AI|AD|VI|VD|OI|OD|VM|VA|VT|VP|SIA|SIV|APEX)?\s*\??\s*$/i)){
     const MASA_NOMBRE = {VEG:'vegetación', MIX:'mixoma', TUM:'tumor intracardíaco', FIB:'fibroelastoma', LIP:'lipoma', CALC:'masa calcificada',
       DIS:'dispositivo', CHI:'red de Chiari', EUS:'válvula de Eustaquio prominente'};
     const LOC_NOMBRE = {AI:'aurícula izquierda', AD:'aurícula derecha', VI:'ventrículo izquierdo', VD:'ventrículo derecho', OI:'orejuela izquierda',
       OD:'orejuela derecha', VM:'válvula mitral', VA:'válvula aórtica', VT:'válvula tricúspide', VP:'válvula pulmonar', SIA:'septum interauricular', SIV:'septum interventricular', APEX:'ápex ventricular'};
     let tipo = m[1].toUpperCase();
+    if(tipo==='VEGETACION') tipo='VEG';
+    if(tipo==='EUSTACHIO') tipo='EUS';
     const loc = m[4] ? LOC_NOMBRE[m[4].toUpperCase()] : null;
     const medidas = (m[2] && m[3]) ? ` de ${m[2]} × ${m[3]} mm` : '';
     const dudoso = line.includes('?');
@@ -763,6 +791,8 @@ function construirInforme(ctx){
   S.__aiDiamCm = num(ctx.aiDiam);
   const lineas = ctx.codigos.split('\n');
   lineas.forEach(l => interpretarLinea(l, S));
+  if(S.__ov.septum!==undefined) ctx.septumVal = S.__ov.septum.toFixed(1);
+  if(S.__ov.viDiast!==undefined) ctx.viDiast = S.__ov.viDiast.toFixed(1);
   if(S.electrodo && S.ritmo==='SINUSAL') S.ritmo = 'ESTIMULACION DE DISPOSITIVO DE RITMO';
 
   const raiz=fmt(num(ctx.raiz));
@@ -816,6 +846,7 @@ function construirInforme(ctx){
   // ---- DESCRIPCIÓN ----
   let desc = {masas:[], cav:[], tab:[], peric:[], contr:[], valv:[], dop:[]};
   if(S.masas.length) desc.masas.push(...S.masas.map(m=>m+'.'));
+  if(S.masasDesc.length) desc.masas.push(...S.masasDesc.map(m=>m+'.'));
   // (contraste espontáneo se describe dentro de Cavidades/Ventrículo izquierdo, ver más abajo)
 
   // AI: si no se dio código de área (AI##), se clasifica por el diámetro fijo de la secuencia (≥4.2 cm = dilatada)
@@ -862,6 +893,7 @@ function construirInforme(ctx){
   }
   else if(S.ai.estado==='severa') desc.cav.push(`Aurícula izquierda severamente dilatada. Área auricular de ${S.ai.area} cm²${laviTxt}.`);
 
+  if(S.ai.apendice) desc.cav.push(`Apéndice auricular libre, pequeño, con base de ${fCm(S.ai.apendice.base)} cm y profundidad ${fCm(S.ai.apendice.prof)} cm, morfología en gorro de viento y libre de ecos.`);
   let cavDerLine = (S.vd.dilatado||S.ad.estado!=='normal') ? 'Cavidades derechas dilatadas.' : 'Cavidades derechas de diámetro y morfología conservada.';
   if(S.vd.apexBi) cavDerLine += ' Ventrículo derecho que se extiende hasta compartir el ápex con el ventrículo izquierdo.';
   if(S.vd.apexDer) cavDerLine += ' Ápex cardíaco ocupado por el ventrículo derecho.';
@@ -894,9 +926,9 @@ function construirInforme(ctx){
   let pericLines = [];
   if(S.pericardio.peric || S.pericardio.dpCm || S.pericardio.dpCc || S.pericardio.dppCm || S.pericardio.dppCc || S.pericardio.grasa){
     let parts = [];
-    if(S.pericardio.dpCm) parts.push(`de predominio anterior con ${S.pericardio.dpCm} cm de espesor`);
+    if(S.pericardio.dpCm) parts.push(S.pericardio.dpNeutro ? `con ${S.pericardio.dpCm} cm de espesor` : `de predominio anterior con ${S.pericardio.dpCm} cm de espesor`);
     if(S.pericardio.dppCm) parts.push(`de predominio posterior con ${S.pericardio.dppCm} cm de espesor`);
-    if(S.pericardio.dpCc) parts.push(`de predominio anterior con volumen estimado de ${S.pericardio.dpCc} cc`);
+    if(S.pericardio.dpCc) parts.push(S.pericardio.dpNeutro ? `con volumen estimado de ${S.pericardio.dpCc} cc` : `de predominio anterior con volumen estimado de ${S.pericardio.dpCc} cc`);
     if(S.pericardio.dppCc) parts.push(`de predominio posterior con volumen estimado de ${S.pericardio.dppCc} cc`);
     let txt;
     if(S.pericardio.dpCm || S.pericardio.dpCc || S.pericardio.dppCm || S.pericardio.dppCc){
@@ -940,9 +972,10 @@ function construirInforme(ctx){
     aorticaTxt = S.aortica.protesis==='PVAB' ? 'Prótesis biológica en posición aórtica con mecanismo oclusor funcionante.' : `Prótesis valvular aórtica (${S.aortica.protesis}) normofuncionante.`;
   } else {
     const aperturaTxt = S.aortica.sa ? 'con limitación para su apertura' : 'con apertura conservada';
-    aorticaTxt = `Aórtica trivalva ${aperturaTxt} y cierre central.`;
+    const tipoValvaAo = S.aortica.bivalva ? 'probablemente bivalva' : 'trivalva';
+    aorticaTxt = `Aórtica ${tipoValvaAo} ${aperturaTxt} y cierre central.`;
     if(raizDilatada) aorticaTxt += ` Raíz aórtica dilatada, de ${raizNum.toFixed(1)} cm.`;
-    if(S.aortica.morfo) aorticaTxt = `Aórtica trivalva con ${morfoTextoA[S.aortica.morfo]||'esclerosis'}, ${aperturaTxt} y cierre central.`;
+    if(S.aortica.morfo) aorticaTxt = `Aórtica ${tipoValvaAo} con ${morfoTextoA[S.aortica.morfo]||'esclerosis'}, ${aperturaTxt} y cierre central.`;
     if(S.aortica.anillo) aorticaTxt += ' Anillo valvular calcificado.';
     if(S.aoSinusal!==undefined) aorticaTxt += ` Diámetro sinusal aórtico (senos de Valsalva) dilatado, de ${S.aoSinusal.toFixed(1)} cm.`;
     if(S.aoSinotubular!==undefined) aorticaTxt += ` Diámetro de la unión sinotubular dilatado, de ${S.aoSinotubular.toFixed(1)} cm.`;
@@ -987,6 +1020,7 @@ function construirInforme(ctx){
   if(S.pulmonar.esclerosis) pulmonarTxt = 'Pulmonar con esclerosis valvular.';
   if(S.pulmonar.estenosis) pulmonarTxt = 'Pulmonar con estenosis valvular.';
   tricValvTxt += '  ' + pulmonarTxt;
+  if(S.pulmonar.troncoDil!==undefined) tricValvTxt += ` Dilatación del tronco de la pulmonar con diámetro de ${fCm(S.pulmonar.troncoDil)} cm.`;
   desc.valv.push(tricValvTxt);
 
   // Doppler
@@ -1135,12 +1169,13 @@ function construirInforme(ctx){
       concl.push(S.aortica.insuf ? `PROTESIS VALVULAR AORTICA (${S.aortica.protesis}) CON INSUFICIENCIA ${S.aortica.insuf.toUpperCase()}${S.aortica.direccion==='excentrica'?', EXCENTRICA':''}.` : `PROTESIS VALVULAR AORTICA (${S.aortica.protesis}) NORMOFUNCIONANTE.`);
     }
   }
-  if(!S.aortica.protesis && (S.aortica.morfo || S.aortica.insuf || S.aortica.anillo || raizDilatada || S.aortica.sa)){
+  if(!S.aortica.protesis && (S.aortica.morfo || S.aortica.insuf || S.aortica.anillo || raizDilatada || S.aortica.sa || S.aortica.bivalva)){
     let txt = '';
     const morfoConclA = {EA:'ESCLEROSIS VALVULAR AORTICA', EAB:'ESCLEROSIS Y LEVE ENGROSAMIENTO VALVULAR AORTICO', 'EA..':'ESCLEROSIS VALVULAR AORTICA CON CALCIFICACION PUNTIFORME',
       CAB:'ESCLEROSIS Y CALCIFICACION DEL BORDE VALVULAR AORTICO', 'CA↑':'ESCLEROSIS, ENGROSAMIENTO Y CALCIFICACION VALVULAR AORTICA', CA:'ESCLEROSIS Y CALCIFICACION VALVULAR AORTICA',
       EA_ANILLO:'ESCLEROSIS Y LEVE CALCIFICACION VALVULAR AORTICA', CA_ANILLO:'ESCLEROSIS, CALCIFICACION VALVULAR Y DEL ANILLO AORTICO'};
-    if(raizDilatada) txt = `DILATACION DE LA RAIZ AORTICA (${raizNum.toFixed(1)} CM)`;
+    if(S.aortica.bivalva) txt = 'VALVULA AORTICA PROBABLEMENTE BIVALVA';
+    if(raizDilatada) txt = txt ? `${txt} CON DILATACION DE LA RAIZ AORTICA (${raizNum.toFixed(1)} CM)` : `DILATACION DE LA RAIZ AORTICA (${raizNum.toFixed(1)} CM)`;
     if(S.aortica.morfo) txt = txt ? `${txt} CON ${morfoConclA[S.aortica.morfo] || 'ESCLEROSIS VALVULAR AORTICA'}` : (morfoConclA[S.aortica.morfo] || 'ESCLEROSIS VALVULAR AORTICA');
     if(S.aortica.anillo) txt += (txt?'.  LEVE CALCIO EN SU ANILLO':'ESCLEROSIS VALVULAR AORTICA.  LEVE CALCIO EN SU ANILLO');
     if(S.aortica.sa){
@@ -1164,6 +1199,7 @@ function construirInforme(ctx){
   // Nota: la morfología tricuspídea (ET/ETB) NO genera conclusión propia — queda solo en descripción,
   // a diferencia de mitral/aórtica donde la morfología SÍ pasa a conclusiones (confirmado con casos reales).
   if(S.tricuspide.estenosis) concl.push('ESTENOSIS VALVULAR TRICUSPIDEA.');
+  if(S.pulmonar.troncoDil!==undefined) concl.push(`DILATACION DEL TRONCO DE LA PULMONAR (${fCm(S.pulmonar.troncoDil)} CM).`);
 
   // Hipertensión pulmonar (siempre concluye, con default "baja" si no hay datos)
   let probHP = 'BAJA';
@@ -1224,7 +1260,7 @@ function construirInforme(ctx){
     !S.vd.apexBi && !S.vd.apexDer && !S.electrodo && !S.cateter && !vdHipertrofia && !S.derNoValorable &&
     !S.tabiques.cia && !S.tabiques.civ && !S.tabiques.fop && !S.tabiques.fopDudoso && !S.tabiques.an && !S.tabiques.sobrecarga &&
     !S.pericardio.peric && !S.pericardio.dpCm && !S.pericardio.dpCc && !S.pericardio.grasa && !S.grasaEpicardica && !S.derramePleural && probHP==='BAJA' &&
-    !gradoDiast && S.masas.length===0 && !S.vi.tromboApical && !S.ce && S.arritmiaConcl.length===0;
+    !gradoDiast && S.masas.length===0 && S.masasConcl.length===0 && S.masasDesc.length===0 && !S.aortica.bivalva && S.pulmonar.troncoDil===undefined && !S.vi.tromboApical && !S.ce && S.arritmiaConcl.length===0;
   if(sinHallazgos) concl.push('ECOCARDIOGRAMA NORMAL.');
 
   // ---- ENSAMBLAR TEXTO ----
@@ -1356,6 +1392,7 @@ function parseBloque(bloque){
     if(m = l.match(/^TALLA\s*:\s*(.+)/i)){ ctx.talla = m[1].trim(); continue; }
     if(m = l.match(/^FC\s*:\s*(.+)/i)){ ctx.fc = m[1].trim(); continue; }
     if(m = l.match(/^FE\s*:\s*(.+)/i)){ ctx.fevi = m[1].trim(); feCapturado=true; continue; }
+    if(m = l.match(/^FEVI\s*:?\s*(\d+(?:[.,]\d+)?(?:\s*-\s*\d+(?:[.,]\d+)?)?)\s*%?$/i)){ ctx.fevi = m[1].replace(/\s+/g,''); feCapturado=true; continue; }
 
     // Peso y talla se reconocen por su UNIDAD (kg / cm), sin importar el orden entre ellos
     if(m = l.match(/^(\d+(?:[.,]\d+)?)\s*(?:kg|mk)$/i)){ ctx.peso = m[1].replace(',','.'); continue; }
@@ -1368,7 +1405,7 @@ function parseBloque(bloque){
     // FC también puede confirmarse explícitamente con "/min" (ej. "71/min"), sin importar la posición
     if(m = l.match(/^(\d+(?:[.,]\d+)?)\s*\/\s*min$/i)){ ctx.fc = m[1].replace(',','.'); continue; }
     // FEVI también se reconoce explícitamente por el símbolo "%" (ej. "65%" o "66-70%"), sin importar la posición
-    if(m = l.match(/^(\d+(?:[.,]\d+)?(?:-\d+(?:[.,]\d+)?)?)\s*%$/i)){ ctx.fevi = m[1].trim(); feCapturado = true; continue; }
+    if(m = l.match(/^(\d+(?:[.,]\d+)?(?:\s*%?\s*-\s*\d+(?:[.,]\d+)?)?)\s*%$/i)){ ctx.fevi = m[1].replace(/[\s%]/g,''); feCapturado = true; continue; }
 
     const esNumeroSimple = /^\d+(?:[.,]\d+)?$/.test(l);
 
